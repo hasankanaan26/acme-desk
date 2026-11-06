@@ -1,0 +1,23 @@
+# What never goes into the image. Secrets come in at RUN time (env_file,
+# a read-only volume), never at BUILD time: anything COPY'd into an image
+# ships with it to every registry and every machine that pulls it.
+.env
+.env.*
+!.env.example
+secrets/
+
+# Local state and caches
+.venv/
+.git/
+**/__pycache__/
+**/.pytest_cache/
+.ruff_cache/
+chroma_data/
+workspace/
+runs/
+**/runs/
+
+# Not needed to run the app
+slides/
+instructor-notes/
+~$*

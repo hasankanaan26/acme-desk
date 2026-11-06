@@ -55,6 +55,10 @@ API URL, neither has the owner's):
 docker compose --profile platform up --build             # after db.py migrate + seed from the laptop
 ```
 
+Offline (a `local` tenant), run the worker on the laptop **or** in Docker, not both: a local citation is
+a `file://` path, which differs inside the container, so two workers would re-label every document on
+alternate ticks. With a Drive tenant the citations are Drive links and any number of workers agree.
+
 ## The demo
 
 1. Sign in as `intern@acme.test`. Search "salary range senior developer": the 2026 bands come back.

@@ -16,6 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Bake the local embedding model (about 80 MB) into the image. Without
+# this, the FIRST question in every new container downloads it, and a
+# live demo stalls for minutes on slow Wi-Fi.
+RUN EMBEDDING_PROVIDER=local python warmup.py
+
 ENV CHECKPOINT=01-source
 EXPOSE 8000
 

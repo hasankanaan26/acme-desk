@@ -80,6 +80,7 @@ services:
       DATABASE_APP_URL: ""
       DATABASE_ADMIN_URL: ""
       ACME_RUNS_DIR: runs
+      SYNC_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-60}   # .env's 0 is Part 1's "timer off"
     volumes:
       - ./workspace:/app/workspace       # the local-mode source
       - ./secrets:/app/secrets:ro        # the service-account key: the worker is the only one that reads Drive
