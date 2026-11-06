@@ -125,7 +125,7 @@ Plan counts do not depend on the embedding model or the source.
 | Friday dry run | add 18, quarantine 1 (the scan), skip 1 (the draft); 88 chunks, ~6,174 tokens, $0.0001 (*rehearsed*) |
 | Friday apply | 88 chunks, smoke check ok, LIVE; 15 to 25 s with Azure, about 5 s local (*rehearsed*) |
 | After the edit and the trash | change 1, remove 1, quarantine 1, skip 1, unchanged 16 |
-| Index after the tick | *fill in* chunks (88 minus the Q3 notes' chunks) |
+| Index after the tick | 82 chunks (measured in local mode on 6 Nov; counts do not depend on the embedder) |
 | Footer upload | touch 1, unchanged 17; 0 chunks to embed |
 
 Searches, after the tick:
@@ -134,8 +134,8 @@ Searches, after the tick:
 |---|---|---|
 | How many unused vacation days can I roll over? | intern | 10 days (5 before the tick) |
 | How many backend developers are we hiring? | finance-lead | no information (the notes are gone) |
-| salary range for a senior developer | intern | nothing about salaries |
-| same | hr-partner | the 2026 bands |
+| salary range for a senior developer | intern | the 2026 bands: on Friday they were mis-shared with every employee (the register says `employees`) |
+| same, after you set `allowed_groups` to `hr, managers` in `shared/data/register.json` and a tick runs (`relabel`, nothing embedded) | intern | nothing about salaries. Only if block 3 has time; `git checkout shared/data/register.json` afterwards |
 
 ---
 
