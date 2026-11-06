@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app import db  # noqa: E402
 from app.ingest.sync import ModelMismatch  # noqa: E402
-from app.ingest.worker import run_tenant, tenant_by_slug  # noqa: E402
+from app.ingest.worker import run_tenant, tenant_by_slug, try_lock_tenant  # noqa: E402
 from app.rag import catalog  # noqa: E402
 
 SOURCE = ""  # set in main(): the tenant's source, for the report header
@@ -82,15 +82,23 @@ def main() -> None:
     tenant = tenant_by_slug(args.tenant)
     SOURCE = f"{tenant['source_kind']}:{tenant['source_ref']}"
 
+    # --wipe and --rollback change the index too, so they take the same
+    # per-tenant lock as a sync. Exiting inside db.tx() rolls back: nothing written.
+    busy = f"STOP: a sync of {args.tenant} is running. Try again in a moment."
+
     if args.wipe:
         with db.tx("sync", tenant["id"]) as conn:
+            if not try_lock_tenant(conn, str(tenant["id"])):
+                sys.exit(busy)
             conn.execute("UPDATE tenants SET live_index = NULL, previous_index = NULL WHERE id = app_tenant()")
             n = conn.execute("DELETE FROM search_indexes").rowcount
         print(f"{args.tenant}: dropped {n} index(es). The next `python sync.py --apply` builds a fresh one.")
         return
 
     if args.rollback:
-        with db.tx("sync", tenant["id"]):
+        with db.tx("sync", tenant["id"]) as conn:
+            if not try_lock_tenant(conn, str(tenant["id"])):
+                sys.exit(busy)
             print(f"Live index is now {catalog.rollback()}")
         return
 

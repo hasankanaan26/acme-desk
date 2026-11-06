@@ -1,6 +1,9 @@
 # Tests: the sync worker — runs recorded in tables, one sync per tenant at a time.
 
+import sys
+
 import psycopg
+import pytest
 from conftest import W, as_tenant, sign_in
 
 from app.config import DATABASE_SYNC_URL
@@ -30,6 +33,19 @@ def test_only_one_sync_per_tenant_at_a_time(friday, tenants):
         result = worker.run_tenant(acme(tenants), trigger="tick")
     assert result["skipped"] == "another sync of this tenant is running" and result["report"] is None
     assert worker.run_tenant(acme(tenants), trigger="tick")["error"] is None   # lock released: it runs
+
+
+def test_wipe_and_rollback_wait_for_a_running_sync(friday, tenants, monkeypatch):
+    import sync as sync_cli   # the CLI script, not app.ingest.sync
+
+    assert worker.run_tenant(acme(tenants), trigger="tick")["error"] is None   # a live index exists
+    with psycopg.connect(DATABASE_SYNC_URL) as other:                          # a sync is mid-run
+        other.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"acme.sync:{tenants['acme']}",))
+        for flag in ("--wipe", "--rollback"):
+            monkeypatch.setattr(sys, "argv", ["sync.py", flag])
+            with pytest.raises(SystemExit, match="is running"):
+                sync_cli.main()
+    assert acme(tenants)["live_index"] is not None                             # nothing was dropped
 
 
 def test_a_failed_run_is_recorded_and_the_worker_carries_on(friday, tenants, monkeypatch):

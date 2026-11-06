@@ -56,6 +56,16 @@ def tenant_by_slug(slug: str) -> dict:
 
 
 # Purpose:
+# One writer per tenant, across every process that shares the
+# database: workers, sync.py, --wipe, --rollback. Non-blocking: False
+# means someone else holds it. Released when the transaction ends, so
+# a crashed process can never leave it stuck.
+def try_lock_tenant(conn: psycopg.Connection, tid: str) -> bool:
+    return conn.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s, 0)) AS ok",
+                        (f"acme.sync:{tid}",)).fetchone()["ok"]
+
+
+# Purpose:
 # One sync of one tenant, recorded in sync_runs. Never raises for a
 # failed sync: the error is recorded, the index was not touched (the
 # transaction rolled back), and the next tick gets another chance.
@@ -74,10 +84,7 @@ def run_tenant(tenant: dict, trigger: str = "tick", apply: bool = True, rebuild:
     try:
         with db.tx("sync", tid) as conn:
             # One sync per tenant at a time, across every worker process.
-            # The lock is released when this transaction ends.
-            got = conn.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s, 0)) AS ok",
-                               (f"acme.sync:{tid}",)).fetchone()["ok"]
-            if not got:
+            if not try_lock_tenant(conn, tid):
                 skipped = "another sync of this tenant is running"
             else:
                 report = run_sync(apply=apply, rebuild=rebuild, connector=make_connector(tenant))
