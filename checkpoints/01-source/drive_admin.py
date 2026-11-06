@@ -95,11 +95,31 @@ def fetch(c: DriveConnector, path: str, out: str | None) -> int:
 
 def permissions(c: DriveConnector, path: str) -> int:
     record = c._record(path)
-    response = c.service().permissions().list(
-        fileId=record["id"], supportsAllDrives=True,
-        fields="permissions(type,role,emailAddress,domain,displayName)",
-    ).execute(num_retries=3)
     entry = next((e for e in load_register(c.fetch_register()).values() if e.path == path), None)
+    try:
+        response = c.service().permissions().list(
+            fileId=record["id"], supportsAllDrives=True,
+            fields="permissions(type,role,emailAddress,domain,displayName)",
+        ).execute(num_retries=3)
+    except Exception as exc:  # googleapiclient HttpError; the fake Drive never raises here
+        if getattr(getattr(exc, "resp", None), "status", None) != 403:
+            raise
+        # A Viewer may read the file but not its sharing list: Drive shows that only to
+        # identities that could change it. Print what a Viewer CAN see, and why.
+        seen = c.service().files().get(
+            fileId=record["id"], supportsAllDrives=True,
+            fields="owners(emailAddress),shared,capabilities(canShare)",
+        ).execute(num_retries=3)
+        owners = ", ".join(o.get("emailAddress", "?") for o in seen.get("owners", [])) or "(a shared drive)"
+        print(f"{path}\n")
+        print("  permissions.list  ->  403 insufficientFilePermissions")
+        print(f"  what a Viewer sees:  owner {owners}  |  shared: {seen.get('shared')}  |  canShare: {seen.get('capabilities', {}).get('canShare')}")
+        print(f"\n  register allowed_groups: {', '.join(entry.allowed_groups) if entry else '(no register entry)'}")
+        print("\n  The sync is a Viewer on purpose (least privilege), and Drive shows a file's sharing only to")
+        print("  identities that could change it. Reading permissions needs a second, admin-approved identity")
+        print("  with a metadata-only scope (Workspace: domain-wide delegation + drive.metadata.readonly).")
+        print("  Until then the register is the truth about who may read what.")
+        return 0
     print(f"{path}\n")
     print(f"  {'Drive sharing (permissions.list)':<48} {'as a register group'}")
     for p in response.get("permissions", []):

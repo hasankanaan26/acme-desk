@@ -1,0 +1,11 @@
+hr/salary-bands-2026.md
+
+  permissions.list  ->  403 insufficientFilePermissions
+  what a Viewer sees:  owner hasan.kanaan97@gmail.com  |  shared: True  |  canShare: False
+
+  register allowed_groups: employees
+
+  The sync is a Viewer on purpose (least privilege), and Drive shows a file's sharing only to
+  identities that could change it. Reading permissions needs a second, admin-approved identity
+  with a metadata-only scope (Workspace: domain-wide delegation + drive.metadata.readonly).
+  Until then the register is the truth about who may read what.

@@ -355,22 +355,24 @@ Next: who may read it.`,
   // ---------------------------------------------------------------- 15 who may read it
   s = S.contentSlide(deck, {
     section: "Signals", title: "Who may read it",
-    subtitle: "Drive knows who a file is shared with. The index enforces allowed_groups. One derives from the other.",
-    takeaway: "The register stays the truth here. Mapping principals to groups is the identity provider's job.",
-    notes: `About: drive_admin.py permissions hr/salary-bands-2026.md, next to the register entry.
-Say: "Drive can tell us who the file is shared with: people and groups by email. The register says which groups may retrieve it. A production sync maps one onto the other: this Google group is the hr group, that one is managers. We keep that mapping as a table and the register as the truth, because the filter inside the query can only use what was stored at ingest time."
-Explain why the sync account's own access is irrelevant: it may read everything in the folder. The user may not. The permission that matters is the user's, copied onto the chunk, enforced inside the search. Wednesday's identity work hangs off this.
+    subtitle: "Drive shows a file's sharing only to identities that could change it. Our sync is a Viewer.",
+    takeaway: "Least privilege and permission-awareness pull against each other. Here the register stays the truth.",
+    notes: `About: drive_admin.py permissions hr/salary-bands-2026.md, live. It returns 403, and that is the lesson. Fallback: fallbacks/part1/permissions.txt.
+Say: "Drive can tell us who a file is shared with, but only if you could change that sharing yourself. Our sync is a Viewer on purpose, so Drive says no. A Viewer sees the owner and that the file is shared, nothing more. To mirror permissions, a production sync uses a SECOND identity, approved once by an admin, with a metadata-only scope: on Google Workspace that is domain-wide delegation with drive.metadata.readonly; on Microsoft 365 an admin-consented app permission. Content and permissions, two identities, each with the least it needs."
+Explain why the sync account's own access is irrelevant to the user: it may read everything in the folder. The user may not. The permission that matters is the user's, copied onto the chunk, enforced inside the search. Wednesday the register moves into Postgres and an admin edits access in the app.
 If asked "Why not call permissions.list at query time?": one call per chunk per question, and the answer would be stale by the time you cached it. Store it at ingest, re-sync when it changes (that is the relabel action).
 Next: the upgrade path from polling.`,
   });
   S.code(s, { x: 0.6, y: 1.6, w: 4.6, h: 2.6, label: "drive_admin.py permissions hr/salary-bands-2026.md", size: 10, lines: [
-    { text: "  permissions.list                  register group", color: C.mintText },
-    { text: "  user   owner    hasan@…           (a person)", color: C.codeText },
-    { text: "  user   reader   acme-desk-sync@…  (the sync itself)", color: C.codeText },
-    { text: "  group  reader   hr-team@acme.example   hr", color: C.green },
-    { text: "  group  reader   managers@acme.example  managers", color: C.green },
+    { text: "  permissions.list", color: C.mintText },
+    { text: "    -> 403 insufficientFilePermissions", color: C.codeText },
     { text: "", color: C.codeText },
-    { text: "  register allowed_groups: hr, managers", color: C.green }] });
+    { text: "  what a Viewer sees:", color: C.mintText },
+    { text: "    owner     hasan@…", color: C.codeText },
+    { text: "    shared    True", color: C.codeText },
+    { text: "    canShare  False", color: C.green },
+    { text: "", color: C.codeText },
+    { text: "  second identity: drive.metadata.readonly", color: C.green }] });
   S.card(s, { x: 5.45, y: 1.6, w: 3.95, h: 2.6, title: "shared/data/register.json", titleSize: 13, icon: I.users, iconInline: true,
     body: [{ runs: [{ text: '"doc_id": "HR-SALARY-BANDS-2026"', font: "Consolas", size: 10 }] }, { runs: [{ text: '"allowed_groups": ["hr", "managers"]', font: "Consolas", size: 10, color: C.deep, b: true }] },
       { runs: [{ text: '"status": "current", "version": 1', font: "Consolas", size: 10 }] }, { runs: "" },
