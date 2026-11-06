@@ -32,8 +32,6 @@ you a better one than a repeat: the same pipeline, on a real document source, on
 The remaining four sessions build one production app on it. The capstone is cancelled so nothing
 competes for your evenings. Here is the plan." Then the arc slide, then `drive_admin.py tree`.
 
-Friday's promises, one line each, and where they land: *fill in*.
-
 ---
 
 ## 2. Before class (20 minutes)
