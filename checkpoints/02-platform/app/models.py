@@ -92,6 +92,7 @@ class QueryResponse(BaseModel):
     no_result: bool = False
     request_id: str = ""
     doc_filter: DocFilterInfo | None = None
+    llm_available: bool = True        # False: no written answer (no key, quota, outage); sources still shown
 
 
 class SyncDocAction(BaseModel):

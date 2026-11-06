@@ -42,6 +42,14 @@ router = APIRouter(prefix="/query", tags=["RAG Q&A"], dependencies=[Depends(csrf
 
 DOC_FILTER_PATTERN = "^(auto|off|" + "|".join(DOC_TYPES) + ")$"
 
+# The model is a dependency that WILL fail: no key, quota, an outage.
+# Retrieval already worked and the user may read every source, so answer
+# with the sources and say plainly what is missing. Never a 500.
+LLM_UNAVAILABLE_ANSWER = (
+    "The AI model is not available right now, so there is no written answer. "
+    "The passages below are the closest matches among the documents you may read."
+)
+
 NO_RESULT_ANSWER = (
     "I don't have information about that in the documents you can access. "
     "Try asking about Acme Corp policies like leave, expenses, "
@@ -118,7 +126,12 @@ def query_rag(
     confidence = score_confidence(chunks, high_threshold=high_threshold, low_threshold=low_threshold)
     context = build_context(chunks)
     template = RAG_MINIMAL_PROMPT if prompt_style == "minimal" else RAG_SYSTEM_PROMPT
-    answer_text = call_llm(user_prompt=request.question, system_prompt=template.format(context=context))
+    llm_available = True
+    try:
+        answer_text = call_llm(user_prompt=request.question, system_prompt=template.format(context=context))
+    except Exception as exc:  # noqa: BLE001 - no key, quota, outage: degrade, do not crash
+        logger.warning("req_%s | LLM unavailable: %s: %s", request_id, type(exc).__name__, exc)
+        answer_text, llm_available = LLM_UNAVAILABLE_ANSWER, False
 
     return QueryResponse(
         question=request.question,
@@ -132,4 +145,5 @@ def query_rag(
         no_result=False,
         request_id=request_id,
         doc_filter=filter_info,
+        llm_available=llm_available,
     )

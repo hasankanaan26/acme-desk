@@ -132,3 +132,18 @@ def test_the_api_role_cannot_change_who_owns_the_live_index(synced):
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         with as_tenant("app", synced["acme"]) as conn:
             conn.execute("UPDATE tenants SET live_index = NULL")
+
+
+# ---- When the model is down ----
+
+def test_no_model_means_sources_and_a_clear_message_never_a_500(synced, client):
+    # The test setup blanks every model key, so the LLM call fails for real here.
+    intern = sign_in(client(), "intern@acme.test")
+    for doc_filter in ("off", "auto"):   # "auto" asks the model to classify first
+        r = intern.post("/query", params={"doc_filter": doc_filter},
+                        json={"question": "How many unused vacation days can I roll over?"}, headers=W)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["llm_available"] is False and "not available" in body["answer"]
+        assert body["sources"]                       # what retrieval found is still shown
+

@@ -216,10 +216,16 @@ function renderRagAnswer(data) {
         return '<div class="banner banner-none"><b>Nothing you may read answers this.</b> ' + escapeHtml(data.answer) + "</div>" + asked;
     }
     let html = "";
+    if (data.llm_available === false) {
+        html += '<div class="banner banner-low"><b>No written answer:</b> the AI model is not available ' +
+            "(an admin needs to set an API key in .env). The closest passages you may read are below.</div>";
+    }
     if (data.confidence === "low") {
         html += '<div class="banner banner-low">Weak evidence: the retrieved chunks may not answer this. Try rephrasing.</div>';
     }
-    html += '<div class="card"><h3>Answer ' + badge(data.confidence) + '</h3><p class="answer">' + escapeHtml(data.answer) + "</p>" + asked + "</div>";
+    if (data.llm_available !== false) {
+        html += '<div class="card"><h3>Answer ' + badge(data.confidence) + '</h3><p class="answer">' + escapeHtml(data.answer) + "</p>" + asked + "</div>";
+    }
     if (data.sources && data.sources.length) {
         html += '<div class="card"><h3>Sources · ' + data.chunks_used + " chunks</h3>" + sourcesList(data.sources) + "</div>";
     }

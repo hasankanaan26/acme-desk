@@ -63,7 +63,10 @@ def choose_doc_type(query: str, filter_mode: str) -> dict:
     if filter_mode == "off":
         return {"doc_type": None, "picked_by": None, "raw_reply": None}
     if filter_mode == "auto":
-        classified = classify_question(query)
+        try:
+            classified = classify_question(query)
+        except Exception as exc:  # noqa: BLE001 - no model: search everything, as filter "off" would
+            return {"doc_type": None, "picked_by": None, "raw_reply": f"(model unavailable: {type(exc).__name__})"}
         return {"doc_type": classified["doc_type"], "picked_by": "llm", "raw_reply": classified["raw_reply"]}
     return {"doc_type": filter_mode, "picked_by": "manual", "raw_reply": None}
 

@@ -63,6 +63,10 @@ os.environ["EMBEDDING_PROVIDER"] = "fake"
 os.environ["EMBED_RETRY_BASE_SECONDS"] = "0"
 os.environ["SYNC_INTERVAL_SECONDS"] = "0"
 os.environ["ACME_SEED_PASSWORD"] = PASSWORD
+# No paid API, ever: blank every model key, whatever .env holds. (load_dotenv
+# never overrides a variable that is already set, even to "".)
+for key in ("GEMINI_API_KEY", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT"):
+    os.environ[key] = ""
 sys.path.insert(0, str(CHECKPOINT))
 
 GLOBEX_REGISTER = {"documents": [
