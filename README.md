@@ -1,21 +1,22 @@
 # Acme Desk
 
 An employee helpdesk assistant for Acme Corp, built across four sessions as one production-shaped
-application: a real document source synced on a schedule, a chat assistant with permissions and
-citations, tools behind real security controls, and guardrails, evals and a release gate on top.
+application: a real document source synced on a schedule, a platform on Postgres with sign-in,
+per-person access and tenants, tools behind real security controls, and guardrails, evals and a
+release gate on top.
 
 Each session is one checkpoint, a complete runnable app copied forward from the one before it:
 
 | Checkpoint | Session | What it adds |
 |---|---|---|
 | `checkpoints/01-source` | Part 1, Mon 9 Nov | The ingestion pipeline on a real document source (Google Drive), synced on a timer |
-| `checkpoints/02-assistant` | Part 2, Wed 11 Nov | The chat assistant: a LangGraph workflow, retrieval with permissions, identity from an API key, streaming |
+| `checkpoints/02-platform` | Part 2, Wed 11 Nov | Postgres + pgvector for all state, sign-in, access checked live in the query, Row-Level Security between tenants, a sync worker with its own database role |
 | `checkpoints/03-tools` | Part 3, Fri 13 Nov | Tools and agents with real security controls: allowlists, validation, approval, idempotency, budgets, audit |
 | `checkpoints/04-release` | Part 4, Mon 16 Nov | Guardrails, evals as a release gate, kill switch, dashboard, Docker, runbook |
 
-Everything runs offline on a laptop: local folder mode, local embeddings, fake services in the tests.
-An LLM key is needed only for answers, from Part 2 on. A Google account is needed only by the
-instructor (see `docs/drive-setup.md`).
+Everything runs on a laptop: local folder mode, local embeddings, fake services in the tests, and
+from Part 2 a Postgres container (`docker compose up -d db`). An LLM key is needed only for written
+answers. A Google account is needed only by the instructor (see `docs/drive-setup.md`).
 
 ## Quick start
 
@@ -30,6 +31,14 @@ python warmup.py                    # downloads the local embedding model, about
 python run_checkpoint.py 01-source  # http://localhost:8000/ui
 ```
 
+From Part 2 on, start Postgres first and set up the database once (see `checkpoints/02-platform/README.md`):
+
+```bash
+docker compose up -d db
+python checkpoints/02-platform/db.py migrate
+python checkpoints/02-platform/db.py seed
+```
+
 Each checkpoint's `README.md` has the commands for its session and the exercises for that night.
 
 ## Layout
@@ -37,6 +46,7 @@ Each checkpoint's `README.md` has the commands for its session and the exercises
 ```
 checkpoints/0N-*/      one complete app per session: app/, the CLI scripts, tests/
 shared/data/           Acme's documents (20 files, 7 sites), the register, the identities, the weekend's events
+                       (from Part 2 the register and identities are only what db.py seeds Postgres from)
 shared/golden/         the golden sets the evaluations run on
 docs/                  drive-setup.md, sharepoint-mapping.md, architecture, runbook (Part 4)
 instructor-notes/      run sheets, fallbacks, the weekend plan

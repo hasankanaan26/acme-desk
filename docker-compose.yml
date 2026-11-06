@@ -25,3 +25,68 @@ services:
       - ./runs:/app/runs                 # sync reports, logs
       - ./workspace:/app/workspace       # the local-mode source
       - ./secrets:/app/secrets:ro        # the service-account key, read-only
+
+  # Part 2 on: Postgres with pgvector holds everything except the files
+  # themselves (tenants, users, groups, the register, chunks + vectors,
+  # sessions, sync runs, audit). Host port 5433 so it never collides
+  # with a Postgres already installed on the laptop (5432).
+  #   docker compose up -d db
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: acme
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-local-only}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d acme"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Part 2 as three containers, each with only what its job needs:
+  #   docker compose up -d db
+  #   python checkpoints/02-platform/db.py migrate && python checkpoints/02-platform/db.py seed   (from the laptop)
+  #   docker compose --profile platform up --build
+  # The API gets the acme_app URL and no Drive key. The worker gets the
+  # acme_sync URL and the Drive key. Neither gets the owner's URL.
+  api:
+    build: .
+    profiles: ["platform"]
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      CHECKPOINT: 02-platform
+      DATABASE_APP_URL: postgresql://acme_app:app-local-only@db:5432/acme
+      DATABASE_SYNC_URL: ""
+      DATABASE_ADMIN_URL: ""
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build: .
+    profiles: ["platform"]
+    command: ["python", "checkpoints/02-platform/worker.py"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_SYNC_URL: postgresql://acme_sync:sync-local-only@db:5432/acme
+      DATABASE_APP_URL: ""
+      DATABASE_ADMIN_URL: ""
+      ACME_RUNS_DIR: runs
+    volumes:
+      - ./workspace:/app/workspace       # the local-mode source
+      - ./secrets:/app/secrets:ro        # the service-account key: the worker is the only one that reads Drive
+      - ./runs:/app/runs
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pg_data:

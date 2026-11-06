@@ -28,10 +28,10 @@ Minimum viable Monday: the environment proven, 01-source in local mode with the 
 
 | Window | Must | Should | Could |
 |---|---|---|---|
-| Mon night + Tue (02) | `llm.py` lift, `auth.py`, `DeskState` + nodes + `workflow.py`, `store/events/obslog` lift, `/chat` + SSE, one-page `chat.html/js`, cp6 strategies copied, `test_auth`, `test_graph_chat`, run sheet, `p2.js` | thread list, trace panel, `/conversations`, HyDE cached | approvals-ready schema |
-| Wed night + Thu (03) | `registry.py`, `policy.py`, `backend_local.py`, `audit.py`, workflow `plan / check_policy / await_approval / execute`, `/approvals`, approval card, `test_policy`, `test_approval_resume`, `test_idempotency`, run sheet, `p3.js` | `backend_sheets.py` + the Sheet, `agent.py`, `agent_unbounded.py` | approvals page |
+| Mon night + Tue (02) | **Built on 7 Nov (branch `part2-platform`):** Postgres + pgvector, sign-in, live access, RLS, roles, worker, admin pages, 76 tests. Left: rehearse the demo, run sheet `part2.md`, `p2.js` | the chat block: `DeskState` + nodes + `workflow.py`, Postgres checkpointer, `/chat` + SSE, hybrid (pgvector + full-text) | thread list, trace panel |
+| Wed night + Thu (03) | `registry.py`, `policy.py`, `backend_local.py`, `audit.py`, workflow `plan / check_policy / await_approval / execute`, `/approvals`, approval card, `test_policy`, `test_approval_resume`, `test_idempotency`, run sheet, `p3.js` | `agent.py`, `agent_unbounded.py` | approvals page |
 | Fri night + Sat/Sun (04) | planted doc + Drive upload, three guards + `tool_policy_check`, `golden_tools.json` + `tool_evals.py`, `evaluate.py`, `release.py` + thresholds, kill switch, one-page runbook, run sheet, `p4.js`, fallbacks | `dashboard.py`, compose tested, `chaos.md` | judge calibration table |
 
 ## 20 minutes before every class
 
-Port 8000 free. `.env` provider and `EMBEDDING_PROVIDER` match the live index (`/health` shows `live_index_built_with`). `drive_admin.py check` green. Doc text restored and the Q3 notes untrashed (Part 1). `SYNC_INTERVAL_SECONDS=60` only for Part 1; otherwise 0 and use Run now. Sheet open and shared (Part 3). Judge cache present (Part 4). The fallbacks folder open in the editor. A second terminal tailing `runs/acme.jsonl`.
+Port 8000 free. `.env` provider and `EMBEDDING_PROVIDER` match the live index (`/health` shows `live_index_built_with`). `drive_admin.py check` green. Doc text restored and the Q3 notes untrashed (Part 1). `SYNC_INTERVAL_SECONDS=60` only for Part 1; otherwise 0 and use Run now. From Part 2: `docker compose up -d db`, `db.py status` shows the index and a live worker. Judge cache present (Part 4). The fallbacks folder open in the editor. A second terminal tailing `runs/acme.jsonl`.

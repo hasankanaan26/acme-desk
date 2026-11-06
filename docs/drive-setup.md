@@ -7,7 +7,7 @@ Students do not need any of this. Every checkpoint runs offline with `SOURCE=loc
 ## 1. A Google Cloud project
 
 1. Open [console.cloud.google.com](https://console.cloud.google.com), create a project, name it `acme-desk`.
-2. APIs & Services, Library: enable **Google Drive API**. Enable **Google Sheets API** too (Part 3 writes tickets to a Sheet).
+2. APIs & Services, Library: enable **Google Drive API**.
 
 ## 2. The service account and its key
 
@@ -72,10 +72,6 @@ Right-click `leadership/q3-planning-notes.md`, Move to trash. The next tick plan
 The register stays a local file, `shared/data/register.json`, so an ACL or status change is an edit to that file. For the salary-bands demo (event 4) edit `allowed_groups` live, then `git checkout shared/data/register.json` afterwards.
 
 If you would rather keep it in Drive: upload `register.json` to the root folder as `_register.json`, set `REGISTER_SOURCE=drive`, and change it through Manage versions.
-
-## 10. Part 3: the tickets Sheet
-
-New, Google Sheets, `Acme Desk Tickets`. Three tabs, `Tickets`, `LeaveRequests`, `Outbox`, each with a header row (see `checkpoints/03-tools/app/tools/backend_sheets.py` for the columns). Share with the service account as **Editor**. The id from the URL goes into `SHEETS_SPREADSHEET_ID`.
 
 ## Troubleshooting
 

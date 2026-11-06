@@ -8,14 +8,19 @@ you would expect.
         │                      SharePoint, Confluence, S3 would sit here too
         ▼
   the sync job                 connector → parse → redact PII → chunk → embed      ← Part 1
-  (on a timer)                 one action per document; the register decides who
-                               may read what; labels travel onto every chunk
+  (on a timer)                 one action per document, one transaction per sync
+                               Part 2: its own process (worker.py), role acme_sync
         ▼
-  the index                    ChromaDB; permission and freshness filters run
-                               INSIDE the query (access_filter), never after it
+  Postgres + pgvector          chunks + vectors, the register, people, groups,      ← Part 2
+                               sessions, sync runs, audit. Row-Level Security per
+                               tenant; the ACL is JOINed INSIDE the vector search
+        ▼
+  the API                      sign-in → session → user, tenant, groups              ← Part 2
+  (role acme_app)              (never from the request body); admin pages for
+                               people, groups and document access
         ▼
   the assistant                a LangGraph workflow: identify → retrieve → answer  ← Part 2
-  (one thread per              identity from an API key, groups from the directory;
+  (one thread per              identify = the session's Principal;
    conversation)               retrieved text is data, never instructions
         ▼
   tools                        allowlist by group → argument validation → policy   ← Part 3
@@ -31,7 +36,9 @@ you would expect.
 |---|---|---|
 | Source → sync | the source's listing and change signals (md5, version) | file contents: parsed with fixed parsers, PII redacted, scans quarantined |
 | Register → index | the register (owner, groups, status, dates) is the truth about a document | a file with no register entry is never indexed (fail closed) |
-| User → assistant | the API key, which maps to a person and their groups in `identities.json` | anything in the request body that claims an identity or a group |
+| Browser → API | the session cookie, looked up server-side to a person, a tenant and groups | anything in the request that claims an identity, a tenant or a group; a write without the `X-Acme-Request` header |
+| API → database | nothing: the API's role (`acme_app`) cannot write the index, and every transaction is pinned to one tenant by Row-Level Security | a missing `WHERE tenant_id` in Python (the database adds it) |
+| Worker → database | the worker's role (`acme_sync`) may write the index | the worker reading people, passwords, sessions or groups (no grant) |
 | Index → model | nothing. Retrieved chunks are wrapped as untrusted documents | instructions found inside documents (Part 4 drops flagged chunks) |
 | Model → tools | the model's *proposal* of a tool and its arguments | the proposal itself: the allowlist, the schema, the policy and a human decide whether it runs |
 | Tools → model | the tool's result, as data | instructions in tool results |
@@ -41,12 +48,14 @@ you would expect.
 | State | Where | Owned by |
 |---|---|---|
 | documents | Google Drive, or `workspace/local-drive` | the document owners |
-| what the index knows about each document | chunk metadata in ChromaDB (`DOC_ID::nnn` ids, `acl_<group>` flags, status, version, dates, eTag, content hash) | the sync job |
-| which index is live | `chroma_data/acme_catalog.json` | `app/rag/catalog.py` (blue/green) |
-| sync reports | `checkpoints/0N-*/runs/sync-*.json` | the sync job |
-| the scheduler | process memory (`app/ingest/scheduler.py`) | the API process |
-| conversations (Part 2) | SQLite, through the LangGraph checkpointer, one thread per conversation | the graph |
-| approvals, audit, tickets (Part 3) | SQLite tables; a Google Sheet as a mirror | the tools layer |
+| the register: status, dates, who may read | Part 1: `register.json`. Part 2: `documents` + `document_acl` | Part 2: tenant admins, in the app, audited |
+| people and groups | Part 1: `identities.json`. Part 2: `users`, `memberships`, `groups`, `group_members` | Part 2: tenant admins |
+| chunks and vectors | Part 1: ChromaDB (with `acl_<group>` flags). Part 2: the `chunks` table (pgvector; access is a JOIN, not a flag) | the sync job |
+| which index is live | Part 1: `acme_catalog.json`. Part 2: `tenants.live_index` | `app/rag/catalog.py` (blue/green) |
+| sync runs | Part 1: `runs/sync-*.json` and process memory. Part 2: `sync_runs`, `sync_requests`, `workers` | the worker |
+| sessions, sign-in attempts, audit | Part 2: `sessions`, `login_attempts`, `audit_log` | the API |
+| conversations (Part 2) | Postgres, through the LangGraph checkpointer, one thread per conversation | the graph |
+| approvals, audit, tickets (Part 3) | Postgres tables, under the same Row-Level Security | the tools layer |
 
 ## Why these choices
 
@@ -57,5 +66,9 @@ you would expect.
   document that live in the source system; the text of the file cannot be trusted to carry them.
 - Filters inside the query, never after it. A top-k search that is filtered afterwards leaks through
   the ranking: the forbidden chunk took a slot a permitted one should have had.
+- From Part 2, defence in depth is literal: the API filters by tenant, Row-Level Security filters by
+  tenant again, and the database roles stop each process from doing the other's job. Any one of
+  them failing alone leaks nothing.
 - Every demo has an offline twin. `SOURCE=local`, the fake embedder and the fake Drive service in the
-  tests mean a laptop with no keys can run every checkpoint and every test.
+  tests mean a laptop with no keys can run every checkpoint and every test (from Part 2, with the
+  Postgres container running).

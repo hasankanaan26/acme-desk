@@ -25,3 +25,6 @@ slides/src/out/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Office lock files (a deck open in PowerPoint)
+~$*

@@ -4,7 +4,7 @@
 # Install once from the repo root:
 #   python -m venv .venv  &&  .venv\Scripts\activate  &&  pip install -r requirements.txt
 #
-# Checkpoint 01 (the source) needs only the first two groups.
+# Checkpoint 01 (the source) needs only the first two groups; 02 adds Postgres.
 # LangChain/LangGraph arrive in checkpoint 02 (the assistant).
 # ============================================================
 
@@ -19,6 +19,12 @@ matplotlib>=3.8.0
 google-api-python-client>=2.150,<3
 google-auth>=2.35,<3
 google-auth-httplib2>=0.2
+
+# --- Postgres (checkpoint 02 on): the store, the register, people, sessions ---
+psycopg[binary]>=3.2,<4    # the driver; psycopg 3, not psycopg2
+psycopg-pool>=3.2,<4       # one connection pool per database role
+pgvector>=0.3,<0.5         # teaches psycopg the vector type
+argon2-cffi>=23.1          # password hashing (argon2id)
 
 # --- LLM providers: raw SDKs in checkpoint 01, LangChain 1.x from checkpoint 02 ---
 openai>=2.45,<3
