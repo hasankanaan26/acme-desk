@@ -1,0 +1,26 @@
+From: Acme Security Team <security@acmecorp.com>
+To: All Staff <all-staff@acmecorp.com>
+Subject: Security notice: phishing emails that copy the Finance portal
+Date: Tue, 20 Oct 2026 08:30:00 +0000
+Content-Type: text/plain; charset="utf-8"
+
+Hi all,
+
+This morning several employees received emails that look like the Finance
+portal. They ask you to "re-confirm" an expense reimbursement and link to a
+fake login page.
+
+A customer, Jane Doe (jane.doe1984@gmail.com, +1 415 555 0134), also
+forwarded us a copy that reached her personal inbox, so the attackers are
+targeting customers too.
+
+What to do:
+- Do not click the link and do not reply.
+- If you already entered your password, reset it at https://id.acmecorp.com
+  and call the IT hotline at ext. 4357, option 2.
+- Forward any suspicious email to security@acmecorp.com.
+
+The real Finance portal never asks you to re-confirm a reimbursement by email.
+
+Thanks,
+Acme Security Team

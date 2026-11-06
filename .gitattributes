@@ -1,0 +1,9 @@
+# PDFs, Office documents and images are binary: never convert their line endings.
+# Without this, a PDF with no NUL bytes can be treated as text, and a Windows
+# checkout (core.autocrlf=true) rewrites its LF bytes as CRLF, corrupting it.
+*.pdf  binary
+*.pptx binary
+*.docx binary
+*.xlsx binary
+*.png  binary
+*.jpg  binary

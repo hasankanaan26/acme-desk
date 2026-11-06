@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vector database - Acme Wiki</title>
+<style>body { font-family: sans-serif; } .cookie-banner { position: fixed; bottom: 0; }</style>
+<script>window.analytics = { page: "wiki/vector-database", team: "platform" };</script>
+</head>
+<body>
+<div class="cookie-banner" id="cookie-banner">
+  <p>We use cookies to improve the wiki. By continuing you accept our cookie policy.</p>
+  <button>Accept all cookies</button>
+</div>
+<header>
+  <nav>
+    <a href="/">Acme Wiki home</a> | <a href="/engineering">Engineering</a> | <a href="/people">People</a> | <a href="/search">Search the wiki</a>
+  </nav>
+</header>
+<aside class="sidebar">
+  <h3>Recently edited</h3>
+  <ul>
+    <li>On-call rotation</li>
+    <li>Deploy checklist</li>
+    <li>Office Wi-Fi passwords</li>
+  </ul>
+</aside>
+<main>
+<article>
+<h1>Vector database</h1>
+<p>A vector database is a database that stores data as high-dimensional vectors
+and retrieves it by similarity rather than by exact match. The vectors are
+produced by an embedding model that turns text, images, or audio into a list
+of numbers.</p>
+<h2>How it works</h2>
+<p>Each item is converted into an embedding and stored alongside its metadata.
+At query time the query is embedded the same way, and the database returns the
+stored vectors closest to it, typically using cosine similarity.</p>
+<h2>Use in retrieval-augmented generation</h2>
+<p>Vector databases are a core component of retrieval-augmented generation. The
+relevant chunks are retrieved by similarity and passed to a language model as
+context, which lets the model answer questions about private documents.</p>
+<h2>Which one does Acme use?</h2>
+<p>The platform team runs pgvector inside the main PostgreSQL cluster for
+production services. Chroma is used for prototypes and for this course.</p>
+<ul>
+<li>Chroma, an embedded vector store used for prototypes.</li>
+<li>FAISS, a similarity-search library from Meta.</li>
+<li>pgvector, an extension that adds vector search to PostgreSQL.</li>
+</ul>
+</article>
+</main>
+<footer>
+  <p>Acme Wiki &copy; 2025 Acme Corporation. Internal use only. <a href="/help">Help</a> | <a href="/privacy">Privacy</a></p>
+</footer>
+<script src="/static/wiki.js"></script>
+</body>
+</html>

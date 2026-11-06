@@ -1,0 +1,21 @@
+From: releases@acme.example
+To: engineering@acme.example
+Subject: Platform release 4.2 is now live
+Date: Mon, 12 May 2025 09:00:00 +0000
+Content-Type: text/plain; charset="utf-8"
+
+Hi all,
+
+Platform release 4.2 went out to production this morning. The headline change
+is a faster deployment pipeline: a full deploy now takes about four minutes,
+down from eleven.
+
+This release also adds a startup check that verifies database credentials
+before a service accepts traffic, which closes the gap identified in incident
+INC-2024-017.
+
+If you see anything unexpected, open an incident and post in the engineering
+channel.
+
+Thanks,
+The Release Team

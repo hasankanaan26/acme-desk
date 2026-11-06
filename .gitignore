@@ -1,0 +1,27 @@
+# secrets and local settings
+.env
+secrets/
+
+# local state: indexes, run reports, the fake Drive folder, SQLite
+chroma_data/
+runs/
+workspace/
+*.db
+*.db-*
+*.sqlite
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# slides build
+slides/src/node_modules/
+slides/src/out/
+
+# editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

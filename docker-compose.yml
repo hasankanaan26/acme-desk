@@ -1,0 +1,27 @@
+# ============================================================
+# Docker Compose — Acme Desk
+# ============================================================
+#   docker compose up --build                 # checkpoint 01-source on :8000
+#   CHECKPOINT=02-assistant docker compose up # another checkpoint
+#
+# The sync scheduler runs as a thread inside the API (SYNC_INTERVAL_SECONDS
+# in .env), not as a second service: ChromaDB's embedded client must not be
+# opened by two processes at once. A separate worker needs the Chroma
+# server image instead of the embedded client; that is a Part 4 topic.
+# ============================================================
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      CHECKPOINT: ${CHECKPOINT:-01-source}
+      ACME_RUNS_DIR: runs
+    volumes:
+      - ./chroma_data:/app/chroma_data   # the index and the blue/green catalog
+      - ./runs:/app/runs                 # sync reports, logs
+      - ./workspace:/app/workspace       # the local-mode source
+      - ./secrets:/app/secrets:ro        # the service-account key, read-only

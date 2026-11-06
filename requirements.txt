@@ -1,0 +1,42 @@
+# ============================================================
+# Acme Desk — one environment for all four checkpoints
+# ============================================================
+# Install once from the repo root:
+#   python -m venv .venv  &&  .venv\Scripts\activate  &&  pip install -r requirements.txt
+#
+# Checkpoint 01 (the source) needs only the first two groups.
+# LangChain/LangGraph arrive in checkpoint 02 (the assistant).
+# ============================================================
+
+# --- Vector store, parsing, embeddings (same line as rag-week-bootcamp) ---
+chromadb==0.6.3            # bundles the local MiniLM embedder and the ONNX runtime the reranker uses
+pypdf==5.1.0
+numpy>=1.26.0
+scikit-learn>=1.4.0        # t-SNE / PCA in the Visualize tab (checkpoint 01 only)
+matplotlib>=3.8.0
+
+# --- Google Drive (the document source) and Google Sheets (the ticket mirror, checkpoint 03) ---
+google-api-python-client>=2.150,<3
+google-auth>=2.35,<3
+google-auth-httplib2>=0.2
+
+# --- LLM providers: raw SDKs in checkpoint 01, LangChain 1.x from checkpoint 02 ---
+openai>=2.45,<3
+google-genai>=1.5,<2       # the 1.x line the Gemini calls in llm.py and embedder.py were written against
+langchain-core>=1.0,<2
+langchain-openai>=1.0,<2
+langchain>=1.0,<2          # only agent_unbounded.py (create_agent) in checkpoint 03
+langgraph>=1.2,<2
+langgraph-checkpoint-sqlite>=3.1,<4
+
+# --- Web ---
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34
+sse-starlette>=2.1,<4
+pydantic>=2.10,<3
+python-dotenv>=1.0
+httpx>=0.28
+
+# --- Tooling ---
+rich>=13
+pytest>=8

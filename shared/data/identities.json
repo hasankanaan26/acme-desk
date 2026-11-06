@@ -1,0 +1,25 @@
+{
+  "about": "Who is asking. In production these groups come from the identity provider (Entra ID, Okta, Google Workspace) after login, never from the request body. Five demo users.",
+  "users": {
+    "intern": {
+      "display": "Engineering intern",
+      "groups": ["employees", "engineering"]
+    },
+    "eng-manager": {
+      "display": "Engineering manager",
+      "groups": ["employees", "engineering", "managers"]
+    },
+    "hr-partner": {
+      "display": "HR business partner",
+      "groups": ["employees", "hr", "managers"]
+    },
+    "finance-lead": {
+      "display": "Finance lead",
+      "groups": ["employees", "finance", "leadership", "managers"]
+    },
+    "sales-rep": {
+      "display": "Sales representative",
+      "groups": ["employees", "sales"]
+    }
+  }
+}

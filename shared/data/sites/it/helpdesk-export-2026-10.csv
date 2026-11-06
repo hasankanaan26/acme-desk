@@ -1,0 +1,6 @@
+ticket_id,opened,reporter,contact,summary,resolution
+IT-4101,2026-10-02,Maria Garcia,maria.garcia.home@gmail.com,VPN disconnects every few minutes on home Wi-Fi,Switched the VPN client to the TCP profile and updated it to version 6.2. Fixed.
+IT-4107,2026-10-05,David Kim,+1 646 555 0187,Laptop battery drains in two hours,Battery replaced under warranty. Laptop swapped for a loaner for one day.
+IT-4112,2026-10-09,Priya Patel,priya.p.1990@yahoo.com,Cannot open the Finance portal after password change,Cleared the cached single sign-on token and re-enrolled multi-factor authentication.
+IT-4120,2026-10-14,Tom Baker,+44 20 7946 0958,Second monitor flickers when docked,Replaced the USB-C dock with the approved model from the IT catalogue.
+IT-4126,2026-10-20,James Wilson,(415) 555-0199,Clicked a link in a phishing email,Password reset and sessions revoked. Reported to the security team. No data accessed.

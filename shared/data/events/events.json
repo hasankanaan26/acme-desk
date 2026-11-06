@@ -1,0 +1,63 @@
+{
+  "about": "What happens in SharePoint over the weekend. sharepoint.py apply <id> replays one event on the workspace copy. Each event changes files, the register, or both.",
+  "events": [
+    {
+      "id": 1,
+      "title": "Finance publishes the 2026 Expense Policy",
+      "story": "A new consolidated policy, effective 1 November 2026, replaces the 2023 policy and its 2024 update. The old two are kept, marked superseded.",
+      "ops": [
+        {"op": "add_file", "path": "finance/expense-policy-2026.md", "from": "files/expense-policy-2026.md"},
+        {"op": "add_entry", "entry": {
+          "doc_id": "FIN-EXP-2026",
+          "path": "finance/expense-policy-2026.md",
+          "title": "Expense Policy (2026 edition)",
+          "owner": "Finance",
+          "doc_type": "policy",
+          "topic": "expenses",
+          "allowed_groups": ["employees"],
+          "status": "current",
+          "version": 1,
+          "effective_from": "2026-11-01",
+          "supersedes": ["FIN-EXP-2023", "FIN-EXP-2024-UPDATE"]
+        }},
+        {"op": "patch_entry", "doc_id": "FIN-EXP-2023", "set": {"status": "superseded", "effective_to": "2026-11-01", "superseded_by": "FIN-EXP-2026"}},
+        {"op": "patch_entry", "doc_id": "FIN-EXP-2024-UPDATE", "set": {"status": "superseded", "effective_to": "2026-11-01", "superseded_by": "FIN-EXP-2026"}},
+        {"op": "patch_entry", "doc_id": "COMPANY-FAQ", "set": {"depends_on": ["FIN-EXP-2026", "HR-LEAVE", "HR-REMOTE"]}}
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HR edits the Leave Policy",
+      "story": "Carry-over goes from 5 to 10 days, and the public holidays and unpaid leave sections move to the HR portal. The file gets shorter.",
+      "ops": [
+        {"op": "replace_file", "path": "hr/leave-policy.md", "from": "files/leave-policy.md"},
+        {"op": "patch_entry", "doc_id": "HR-LEAVE", "set": {"version": 2, "effective_from": "2026-11-02"}}
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Legal withdraws the Q3 planning notes",
+      "story": "The notes named people in a hiring discussion. Legal deletes the file from SharePoint.",
+      "ops": [
+        {"op": "delete_file", "path": "leadership/q3-planning-notes.md"},
+        {"op": "remove_entry", "doc_id": "LEAD-Q3-NOTES"}
+      ]
+    },
+    {
+      "id": 4,
+      "title": "HR fixes who can read the salary bands",
+      "story": "The salary bands were shared with every employee by mistake. HR restricts them to HR and people managers. Not one word of the file changes.",
+      "ops": [
+        {"op": "patch_entry", "doc_id": "HR-SALARY-BANDS-2026", "set": {"allowed_groups": ["hr", "managers"], "note": "Fixed: restricted to HR and managers."}}
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Someone edits the wiki page footer",
+      "story": "The copyright year and a navigation link change. The article itself does not.",
+      "ops": [
+        {"op": "replace_file", "path": "engineering/wiki-vector-database.html", "from": "files/wiki-vector-database.html"}
+      ]
+    }
+  ]
+}
