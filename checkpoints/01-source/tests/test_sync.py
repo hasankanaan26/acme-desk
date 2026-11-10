@@ -22,9 +22,13 @@ def test_first_sync_builds_and_activates_an_index(friday):
     assert acts["HR-LEAVE"] == "add"
     assert catalog.active_name() is None                      # a dry run writes nothing
 
-    report = run_sync(apply=True)
+    report = run_sync(apply=True, trigger="cli")
     assert report["activated"] is True
     assert store.count() == report["chunks_in_index"] > 0
+    # The report says who started it, when, and when each file last changed at the source.
+    assert report["trigger"] == "cli" and report["started_at"] <= report["finished_at"]
+    leave = next(d for d in report["documents"] if d["doc_id"] == "HR-LEAVE")
+    assert leave["source"]["modified"] and leave["source"]["size"] > 0
     # Nothing changed at the source: the next run does nothing at all.
     again = run_sync(apply=False)
     assert set(again["counts"]) <= {"unchanged", "quarantine", "skip"}

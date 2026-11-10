@@ -150,18 +150,28 @@ async function loadStatus() {
         const sched = health.scheduler || {};
         status.replaceChildren(
             chip("", String(health.checkpoint), "", "ok"),
-            chip("Source ", health.source === "drive" ? "Google Drive" : "local folder"),
+            chip("Source ", sourceLabel(health.source)),
             chip("Sync ", sched.enabled ? (sched.paused ? "paused" : "every " + sched.interval + "s") : "manual"),
             chip("LLM ", health.llm_provider, " · " + health.model),
             chip("Embeddings ", health.embedding_model),
-            chip("", String(count), " chunks live", count === 0 || count === "?" ? "bad" : "")
+            vectorChip(health),
+            chip("", String(count), " chunks live", count === 0 || count === "?" ? "bad" : ""),
+            changeChip(sched.last_change)
         );
 
+        renderPipeline(health);
         if (store) fillSourceFilter(store.sources);
         if (health.doc_types) fillDocFilter(health.doc_types);
     } catch (err) {
         status.replaceChildren(chip("Server not reachable", "", "", "bad"));
     }
+}
+
+// Purpose: "Vectors Postgres + pgvector", red when the database cannot be reached.
+function vectorChip(health) {
+    const span = chip("Vectors ", health.vector_store || "?", "", health.vector_store_error ? "bad" : "");
+    span.title = (health.vector_store_location || "") + (health.vector_store_error ? " · " + health.vector_store_error : "");
+    return span;
 }
 
 // Purpose: one status chip, built with textContent (no HTML strings).
@@ -306,19 +316,23 @@ async function submitLlm(event) {
     await runWithBusy(event.target, "llmOutput", "Asking the model…", async () => {
         const [plain, grounded] = await Promise.allSettled([
             postJson("/ask", payload),
-            postJson("/ask/grounded", payload),
+            postJson(withParams("/ask/grounded", who()), payload),
         ]);
         setOutput("llmOutput",
             '<div class="columns">' +
                 llmCard("Plain", "/ask", plain) +
-                llmCard("Grounded (fixed leave-policy context)", "/ask/grounded", grounded) +
+                llmCard("Grounded (retrieved context)", "/ask/grounded", grounded) +
             "</div>");
     });
 }
 
 function llmCard(title, path, result) {
+    const sources = result.status === "fulfilled" && (result.value.sources || []).length
+        ? '<p class="meta">From ' + result.value.sources.map(escapeHtml).join(" · ") + "</p>"
+        : "";
     const body = result.status === "fulfilled"
-        ? '<p class="answer">' + escapeHtml(result.value.answer) + '</p><p class="meta">Model ' + escapeHtml(result.value.model) + "</p>"
+        ? '<p class="answer">' + escapeHtml(result.value.answer) + "</p>" + sources +
+          '<p class="meta">Model ' + escapeHtml(result.value.model) + "</p>"
         : errorBanner(result.reason);
     return '<div class="card"><h3>' + escapeHtml(title) + " <code>" + path + "</code></h3>" + body + "</div>";
 }
@@ -384,6 +398,7 @@ async function submitSync(event) {
         const data = await api(url, { method: "POST" });
         setOutput("syncOutput", renderSync(data));
         loadStatus();
+        if (data.applied) refreshScheduler();  // you just saw it: the card updates, no toast
     });
 }
 
@@ -461,25 +476,57 @@ function renderScheduler(s) {
         : s.paused ? ["paused", "the timer is running, its ticks do nothing"]
         : s.running ? ["running", "a sync is executing right now"]
         : ["on", "every " + s.interval + "s · next tick in " + (s.seconds_to_next_run ?? "?") + "s"];
-    const summary = s.last_summary || {};
-    const counts = Object.entries(summary.counts || {}).map(([action, n]) => stat(n, action)).join("");
-    const last = s.last_run
-        ? "Last tick " + escapeHtml(s.last_run.replace("T", " ")) + " · " + s.last_seconds + "s · " +
-          (summary.chunks_in_index ?? "?") + " chunks in the index"
-        : "No tick yet.";
+    // One sentence about the last run: the table below has the details.
+    const counts = (s.last_summary || {}).counts || {};
+    const changed = Object.entries(counts).filter(([a]) => !["unchanged", "skip", "quarantine"].includes(a))
+        .reduce((n, [, k]) => n + k, 0);
+    const last = !s.last_run ? "No run since the app started."
+        : "Last run " + when(s.last_run) + " (" + escapeHtml(ago(s.last_run)) + "): " +
+          (s.last_error ? "failed" : changed ? changed + " document(s) changed" : "nothing new");
     card.querySelector(".scheduler-state").innerHTML =
         '<span class="badge badge-' + SCHED_LEVEL[state[0]] + '">' + state[0] + "</span> " +
         '<span class="muted">' + escapeHtml(state[1]) + "</span>";
-    card.querySelector(".scheduler-last").innerHTML =
-        '<p class="meta">' + last + " · " + s.runs + " run(s), " + s.errors + " error(s)</p>" +
-        (counts ? '<div class="stats">' + counts + "</div>" : "") +
-        (s.last_error ? errorBanner(new Error("Last tick failed, index untouched: " + s.last_error)) : "");
+    card.querySelector(".scheduler-last").innerHTML = '<p class="meta">' + last + "</p>" +
+        (s.last_error ? errorBanner(new Error("The last run failed and the index was left untouched: " + s.last_error)) : "");
     document.getElementById("schedPause").disabled = !s.enabled || s.paused;
     document.getElementById("schedResume").disabled = !s.enabled || !s.paused;
+    lastSchedStatus = s;
 }
 
+const SOURCE_LABELS = { drive: "Google Drive", onedrive: "OneDrive", local: "local folder" };
+function sourceLabel(source) {
+    return SOURCE_LABELS[source] || "local folder";
+}
+
+// Purpose: where the documents come from and where the vectors go, in one line:
+// "Google Drive → sync every 60 s → Postgres + pgvector (postgres://localhost:5433/acme_part1)".
+function renderPipeline(health) {
+    const el = document.getElementById("pipeline");
+    if (!el || !health) return;
+    const sched = health.scheduler || {};
+    const source = sourceLabel(health.source);
+    const index = health.live_index
+        ? "live index <code>" + escapeHtml(health.live_index) + "</code>, built with " + escapeHtml(health.live_index_built_with || "?")
+        : "no live index yet: the next run builds one";
+    el.innerHTML =
+        '<div class="flow"><span class="node">' + escapeHtml(source) + "</span><span class=\"arrow\">→</span>" +
+        '<span class="node">sync ' + escapeHtml(sched.enabled ? "every " + sched.interval + " s" : "by hand") + "</span>" +
+        '<span class="arrow">→</span><span class="node store">' + escapeHtml(health.vector_store || "?") + "</span></div>" +
+        '<p class="meta">' + escapeHtml(health.vector_store_location || "") + " · " + index + "</p>" +
+        (health.vector_store_error ? errorBanner(new Error(health.vector_store_error)) : "");
+}
+
+// Purpose: one status read, on any tab. The Sync tab redraws from it;
+// every tab learns about a sync that changed the index.
 async function refreshScheduler() {
-    try { renderScheduler(await api("/sync/status")); } catch (err) { /* the status bar already says the server is away */ }
+    let s;
+    try { s = await api("/sync/status"); } catch (err) { return; /* the status bar already says the server is away */ }
+    const onSyncTab = !!document.querySelector('section[data-panel="sync"].active');
+    if (onSyncTab) {
+        renderScheduler(s);
+        loadHistory();  // redraws only when a new run has landed
+    }
+    noticeChange(s, onSyncTab);
 }
 
 // Purpose: Run now / Pause / Resume. "Run now" is the very tick the timer makes.
@@ -488,7 +535,9 @@ async function clickScheduler(event) {
     if (!button) return;
     button.disabled = true;
     try {
-        renderScheduler(await api("/sync/" + button.dataset.sched, { method: "POST" }));
+        const s = await api("/sync/" + button.dataset.sched, { method: "POST" });
+        renderScheduler(s);
+        noticeChange(s, true);
         if (button.dataset.sched === "now") {
             loadStatus();
             if (document.getElementById("explainOutput").innerHTML) submitExplain();
@@ -500,10 +549,271 @@ async function clickScheduler(event) {
     }
 }
 
-// Poll while the Sync tab is open, so the countdown moves and a tick shows up by itself.
-setInterval(() => {
-    if (document.querySelector('section[data-panel="sync"].active')) refreshScheduler();
-}, 5000);
+// Poll on every tab: on the Sync tab the countdown moves and a tick shows up by
+// itself; on any other tab, a sync that changed the index pops up a toast.
+setInterval(refreshScheduler, 5000);
+
+// ---------- Sync: what the last change did (GET /sync/status → last_change) ----------
+// A tick a minute almost always says "unchanged 18", so "the last tick" hides
+// the one run that mattered. The server keeps the runs that changed the index
+// apart; this section announces a new one and explains it in plain words.
+
+const TRIGGER_LABEL = { tick: "Automatic sync", "run now": "Run now", manual: "Manual sync", cli: "sync.py" };
+const SEEN_KEY = "acme.seenChange";
+let seenChangeId = null;        // in memory too, in case localStorage is blocked
+let knownChangeId;              // undefined until the first status read
+let lastSchedStatus = null;
+let scrollToChange = false;
+
+function triggerLabel(t) { return TRIGGER_LABEL[t] || "Sync"; }
+
+function when(iso) { return iso ? escapeHtml(new Date(iso).toLocaleString()) : "–"; }
+
+function ago(iso) {
+    const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 45) return "just now";
+    if (s < 3600) return Math.max(1, Math.round(s / 60)) + " min ago";
+    if (s < 86400) return Math.round(s / 3600) + " h ago";
+    return Math.round(s / 86400) + " day(s) ago";
+}
+
+function seenChange() {
+    try { return localStorage.getItem(SEEN_KEY) || seenChangeId; } catch (e) { return seenChangeId; }
+}
+
+function markChangeSeen(id) {
+    seenChangeId = id;
+    try { localStorage.setItem(SEEN_KEY, id); } catch (e) { /* in memory is enough for this page */ }
+    document.getElementById("changeToast").hidden = true;
+}
+
+// Purpose: what happened to one document, in a sentence.
+function changeSentence(d) {
+    switch (d.action) {
+        case "add": return "New in the index: " + d.chunks + " chunk(s) embedded.";
+        case "change": return "Its text changed (" + d.reason.replace(/^text changed: /, "") + "): the old chunks were deleted and the new ones embedded.";
+        case "relabel": return "Only its labels changed, nothing re-embedded: " + d.reason + ".";
+        case "touch": return "The file changed but its text did not. Only the new eTag was stored; nothing re-embedded.";
+        case "remove": return "Removed from the index: " + d.reason + ".";
+        case "quarantine": return "Taken out of the index: " + d.reason;
+        default: return d.reason;
+    }
+}
+
+function changeShort(d) {
+    return { add: "added, " + d.chunks + " chunk(s) embedded", change: "text changed, " + d.chunks + " chunk(s) re-embedded",
+        relabel: "labels updated", touch: "file touched, text unchanged", remove: "removed from the index",
+        quarantine: "quarantined" }[d.action] || d.action;
+}
+
+// Warnings that name a document this run changed are news; the rest show up on every run.
+function splitWarnings(c) {
+    // Whole ids only: HR-LEAVE must not match HR-LEAVE-2027.
+    const names = c.documents.map(d => new RegExp("(^|[^\\w-])" + d.doc_id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w-])"));
+    const related = c.warnings.filter(w => names.some(re => re.test(w)));
+    return { related, other: c.warnings.filter(w => !related.includes(w)) };
+}
+
+function duration(seconds) {
+    if (seconds < 90) return seconds + " s";
+    if (seconds < 5400) return Math.round(seconds / 60) + " min";
+    if (seconds < 172800) return Math.round(seconds / 3600) + " h";
+    return Math.round(seconds / 86400) + " days";
+}
+
+// Purpose: "Saved in the source 17:28:01 by Hasan · picked up 42 s later".
+// Only for actions caused by a new save of the file: a relabel comes from
+// the register, so the file's own modified time says nothing about it.
+function sourceLine(d, runAt, before = "") {
+    const src = d.source || {};
+    if (!src.modified || !["add", "change", "touch", "quarantine"].includes(d.action)) return "";
+    const lag = Math.round((new Date(runAt) - new Date(src.modified)) / 1000);
+    return before + '<span class="muted">Saved in the source ' + when(src.modified) +
+        (src.modified_by ? " by " + escapeHtml(src.modified_by) : "") +
+        (lag >= 0 ? " · picked up " + escapeHtml(duration(lag)) + " later" : "") + "</span>";
+}
+
+// ---------- Sync: history (GET /sync/history, GET /sync/runs/{id}) ----------
+
+let historyDrawnFor = null;  // the last_run the table was drawn for: redraw only when a run lands
+
+function fillHistoryFiles(files, current) {
+    const select = document.getElementById("historyFile");
+    select.innerHTML = '<option value="">All files</option>' +
+        files.map(f => '<option value="' + escapeHtml(f) + '">' + escapeHtml(f) + "</option>").join("");
+    select.value = files.includes(current) ? current : "";
+}
+
+// Why a run embedded everything again, in a sentence.
+function fullBuildSentence(e) {
+    const where = e.vector_store ? " in " + e.vector_store : "";
+    const why = e.build_reason || "the index was rebuilt (no live index yet, or the embedding model changed)";
+    return "Built a new index" + where + (e.collection ? " (" + e.collection + ")" : "") + " and embedded every file, because " +
+        why + "." + (e.embedding_model ? " Embedding model: " + e.embedding_model + "." : "");
+}
+
+function historyChangeRows(e, latest) {
+    if (e.full_build) {
+        e = { ...e, warnings: [], documents: [{ doc_id: e.documents.length + " documents", path: "All files", action: "full build",
+            reason: fullBuildSentence(e), source: {} }] };
+    }
+    const n = e.documents.length;
+    const runCell = '<td rowspan="' + n + '" class="run-cell">' + escapeHtml(triggerLabel(e.trigger)) + "<br>" +
+        '<span class="muted">' + (e.seconds ?? "?") + " s · " + e.chunks_embedded + " chunk(s) embedded" +
+        (e.full_build ? " · full build" : "") + "</span><br>" +
+        '<button type="button" class="link" data-run="' + escapeHtml(e.id) + '">Full plan</button></td>';
+    const at = new Date(e.at);
+    const whenCell = '<td rowspan="' + n + '" class="when-cell">' + (latest ? '<span class="badge badge-high">Latest</span><br>' : "") +
+        "<b>" + escapeHtml(at.toLocaleTimeString()) + "</b><br>" +
+        escapeHtml(at.toLocaleDateString()) + '<br><span class="muted">' + escapeHtml(ago(e.at)) +
+        (e.started_at ? "<br>started " + escapeHtml(new Date(e.started_at).toLocaleTimeString()) : "") + "</span></td>";
+    const rows = e.documents.map((d, i) =>
+        "<tr" + (latest ? ' class="latest"' : "") + ">" + (i === 0 ? whenCell : "") +
+        "<td><b>" + escapeHtml(d.path || d.doc_id) + '</b><br><span class="muted">' + escapeHtml(d.doc_id) + "</span></td>" +
+        '<td><span class="badge badge-' + (ACTION_LEVEL[d.action] || "medium") + '">' + escapeHtml(d.action) + "</span></td>" +
+        '<td class="did-cell">' + escapeHtml(d.action === "full build" ? d.reason : changeSentence(d)) + "</td>" +
+        '<td class="src-cell">' + (sourceLine(d, e.at) || (d.source ? '<span class="muted">–</span>'
+            : '<span class="muted" title="Reports written before this column existed do not have it.">not recorded</span>')) + "</td>" +
+        (i === 0 ? runCell : "") + "</tr>").join("");
+    const warn = e.warnings && e.warnings.length
+        ? '<tr class="history-warn"><td></td><td colspan="5">⚠ ' + e.warnings.map(escapeHtml).join("<br>⚠ ") + "</td></tr>" : "";
+    return rows + warn;
+}
+
+function historyQuietRow(e, path) {
+    const span = e.from === e.to ? when(e.from) : when(e.from) + " → " + when(e.to);
+    return '<tr class="quiet"><td colspan="6">' + e.runs + " run(s) " +
+        (path ? "without a change to this file" : "found nothing new") + " · " + span + "</td></tr>";
+}
+
+// Purpose: the history table. force = redraw even if no new run landed (filter changed).
+async function loadHistory(force = false) {
+    const path = value("historyFile");
+    let h;
+    try {
+        h = await api(withParams("/sync/history", { limit: 100, path: path }));
+    } catch (err) {
+        setOutput("historyOutput", errorBanner(err));
+        return;
+    }
+    if (!force && h.last_run === historyDrawnFor) return;
+    historyDrawnFor = h.last_run;
+    fillHistoryFiles(h.files, path);
+    document.getElementById("historySummary").innerHTML = h.total_runs
+        ? h.total_runs + " applied run(s) since " + when(h.first_run) + " · " + h.runs_that_changed +
+          " changed something · last run " + when(h.last_run)
+        : "";
+    if (!h.entries.length) {
+        setOutput("historyOutput", '<p class="muted">No applied run yet. Tick “Apply” above, or wait for a tick.</p>');
+        return;
+    }
+    setOutput("historyOutput", '<table class="history-table"><tr><th>When</th><th>File</th><th>Action</th>' +
+        "<th>What the sync did</th><th>Changed in the source</th><th>Run</th></tr>" +
+        h.entries.map(e => e.kind === "quiet" ? historyQuietRow(e, h.path)
+            : historyChangeRows(e, e === h.entries.find(x => x.kind === "change"))).join("") + "</table>");
+    if (scrollToChange) {
+        scrollToChange = false;
+        document.getElementById("historyCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+}
+
+async function showRunPlan(id) {
+    const out = document.getElementById("historyDetail");
+    out.innerHTML = '<p class="loading">Reading ' + escapeHtml(id) + "…</p>";
+    try {
+        const report = await api("/sync/runs/" + encodeURIComponent(id));
+        out.innerHTML = '<div class="history-detail-head"><h4>Full plan of the run at ' + when(report.finished_at || report.started_at) +
+            " · " + escapeHtml(triggerLabel(report.trigger)) + "</h4>" +
+            '<button type="button" class="link" data-run-close>Close</button></div>' + renderSync(report);
+        out.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+        out.innerHTML = errorBanner(err);
+    }
+}
+
+function clickHistory(event) {
+    const run = event.target.closest("button[data-run]");
+    if (run) showRunPlan(run.dataset.run);
+    if (event.target.closest("button[data-run-close]")) document.getElementById("historyDetail").innerHTML = "";
+}
+
+function flash(el) {
+    el.classList.remove("flash");
+    void el.offsetWidth;  // restart the animation
+    el.classList.add("flash");
+}
+
+// Purpose: a new change since the last look. On the Sync tab the card already
+// shows it, so it only flashes; on any other tab a toast says what happened.
+function noticeChange(s, onSyncTab) {
+    const c = s.last_change;
+    updateChangeChip(c);
+    if (!c) return;
+    if (knownChangeId !== undefined && c.id !== knownChangeId) loadStatus();  // the chunk count moved
+    knownChangeId = c.id;
+    if (c.id === seenChange()) return;
+    if (onSyncTab) {
+        markChangeSeen(c.id);
+        loadHistory(true);
+        flash(document.getElementById("historyCard"));
+    } else {
+        showChangeToast(c);
+    }
+}
+
+function showChangeToast(c) {
+    const toast = document.getElementById("changeToast");
+    if (!toast.hidden && toast.dataset.change === c.id) return;  // already up: don't restart it
+    const docs = c.full_build
+        ? "<li>" + escapeHtml(fullBuildSentence({ ...c, collection: null, embedding_model: null })) + "</li>"
+        : c.documents.slice(0, 3).map(d => "<li><b>" + escapeHtml(d.path || d.doc_id) + "</b>: " + escapeHtml(changeShort(d)) + "</li>").join("") +
+          (c.documents.length > 3 ? '<li class="muted">and ' + (c.documents.length - 3) + " more</li>" : "");
+    const related = c.full_build ? [] : splitWarnings(c).related;
+    toast.dataset.change = c.id;
+    toast.innerHTML =
+        '<div class="toast-head"><b>' + escapeHtml(triggerLabel(c.trigger)) + " updated the index</b>" +
+        '<button type="button" class="toast-close" data-toast="close" aria-label="Dismiss">×</button></div>' +
+        "<ul>" + docs + "</ul>" +
+        (related.length ? '<p class="toast-warn">' + escapeHtml(related[0]) + (related.length > 1 ? " (+" + (related.length - 1) + " more)" : "") + "</p>" : "") +
+        '<div class="toast-foot"><span class="muted">' + when(c.at) + " · " + escapeHtml(ago(c.at)) + "</span>" +
+        '<button type="button" data-toast="open">See what changed</button></div>';
+    toast.hidden = false;
+    flash(toast);
+}
+
+// Purpose: a chip in the top bar, "Changed hr/leave-policy.md · 4 min ago", that opens Sync activity.
+function changeChip(c) {
+    const what = !c ? "" : c.full_build ? "the whole index" + (c.vector_store ? " in " + c.vector_store : "")
+        : (c.documents[0].path || c.documents[0].doc_id) + (c.documents.length > 1 ? " +" + (c.documents.length - 1) : "");
+    const span = chip(c && c.full_build ? "Rebuilt " : "Changed ", what, c ? " · " + ago(c.at) : "", "link");
+    span.id = "changeChip";
+    span.title = c ? triggerLabel(c.trigger) + " at " + new Date(c.at).toLocaleString() + ". Click to see what changed." : "";
+    span.hidden = !c;
+    span.addEventListener("click", openLastChange);
+    return span;
+}
+
+function updateChangeChip(c) {
+    const old = document.getElementById("changeChip");
+    if (old) old.replaceWith(changeChip(c));
+    else if (c) document.getElementById("status").append(changeChip(c));
+}
+
+function openLastChange() {
+    const c = lastSchedStatus && lastSchedStatus.last_change;
+    if (c) markChangeSeen(c.id);
+    scrollToChange = true;
+    historyDrawnFor = null;  // redraw, then scroll to it
+    if (location.hash === "#sync") refreshScheduler();
+    else location.hash = "#sync";
+}
+
+function clickToast(event) {
+    const button = event.target.closest("button[data-toast]");
+    if (!button) return;
+    if (button.dataset.toast === "open") openLastChange();
+    else markChangeSeen(event.currentTarget.dataset.change);
+}
 
 // ---------- Sync: see the difference (GET /sync/explain, /source-events/...) ----------
 
@@ -790,9 +1100,14 @@ document.getElementById("storeIndex").addEventListener("change", changeStoreInde
 document.getElementById("explainForm").addEventListener("submit", submitExplain);
 document.getElementById("eventButtons").addEventListener("click", clickEvent);
 document.getElementById("schedulerButtons").addEventListener("click", clickScheduler);
+document.getElementById("changeToast").addEventListener("click", clickToast);
+document.getElementById("historyFile").addEventListener("change", () => loadHistory(true));
+document.getElementById("historyOutput").addEventListener("click", clickHistory);
+document.getElementById("historyDetail").addEventListener("click", clickHistory);
 document.getElementById("visualizeForm").addEventListener("submit", submitVisualize);
 window.addEventListener("hashchange", showTab);
 
 wireSamples();
 loadStatus();
 showTab();
+if (location.hash !== "#sync") refreshScheduler();  // a change since your last visit shows up at once

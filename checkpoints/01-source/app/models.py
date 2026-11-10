@@ -22,6 +22,7 @@ class Answer(BaseModel):
     answer: str
     model: str
     grounded: bool = False
+    sources: list[str] = []  # "Title > section" of each retrieved chunk (grounded only)
 
 
 class ChunkInfo(BaseModel):
@@ -188,6 +189,8 @@ class SyncDocAction(BaseModel):
     # The evidence: eTag and content hash in the index vs in the source.
     # None = not known (not indexed yet, file gone, or not downloaded).
     signals: dict[str, str | None] = {}
+    # The file as the source lists it: last modified, by whom, size.
+    source: dict = {}
 
 
 class SyncResponse(BaseModel):
@@ -243,3 +246,5 @@ class SchedulerStatus(BaseModel):
     last_error: str | None = None
     next_run: str | None = None
     seconds_to_next_run: int | None = None
+    last_change: dict | None = None    # the newest run that changed the index (changes[0])
+    changes: list[dict] = []           # the last runs that changed it, newest first

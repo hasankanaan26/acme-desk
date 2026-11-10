@@ -45,7 +45,7 @@
         <p class="tab-group">Answer</p>
         <a href="#query" data-tab="query">Ask (RAG)</a>
         <a href="#compare" data-tab="compare">RAG vs plain</a>
-        <a href="#llm" data-tab="llm">LLM only</a>
+        <a href="#llm" data-tab="llm">Plain vs grounded</a>
         <p class="tab-group">Retrieve</p>
         <a href="#search" data-tab="search">Search</a>
         <a href="#embed" data-tab="embed">Embeddings</a>
@@ -126,8 +126,8 @@
 
         <!-- ---------- LLM only: POST /ask and /ask/grounded ---------- -->
         <section data-panel="llm">
-            <h2>LLM only (no retrieval)</h2>
-            <p class="hint">Plain asks the model directly. Grounded pastes a fixed leave-policy snippet into the prompt, the hand-made version of what RAG automates, so it only knows about leave. <code>POST /ask</code> · <code>POST /ask/grounded</code></p>
+            <h2>Plain vs grounded</h2>
+            <p class="hint">Plain asks the model directly. Grounded pastes the chunks retrieved from the live index into the prompt, so it answers from the documents as of the last sync. <code>POST /ask</code> · <code>POST /ask/grounded</code></p>
             <form class="ask-row" id="llmForm">
                 <input type="text" id="llmQuestion" placeholder="Ask the model directly…" autocomplete="off" required>
                 <button type="submit">Ask both</button>
@@ -174,19 +174,12 @@ The cat sat on the mat.</textarea>
         <!-- ---------- Sync: POST /sync (replaces POST /ingest) ---------- -->
         <section data-panel="sync">
             <h2>Sync with the document source</h2>
-            <p class="hint">Compares the source (Google Drive, or <code>workspace/local-drive</code> when <code>SOURCE=local</code>) with the live index and decides one action per document. A dry run writes nothing. <code>POST /sync</code></p>
-            <form id="syncForm">
-                <label class="check">
-                    <input type="checkbox" id="syncApply">
-                    Apply the plan (write to the index). Unticked = dry run.
-                </label>
-                <button type="submit">Run sync</button>
-            </form>
+            <p class="hint">Keeps the index true to the source: every run compares each file with what the index holds and
+                does only what changed. <code>GET /sync/status</code> · <code>GET /sync/history</code></p>
 
             <div class="card scheduler" id="schedulerCard">
-                <h3>The scheduler: the same job, on a timer</h3>
-                <p class="muted">With <code>SYNC_INTERVAL_SECONDS</code> set, the sync runs on its own inside the API: every tick is
-                    the same decision ladder as the button above. <code>GET /sync/status</code> · <code>POST /sync/now</code></p>
+                <h3>Automatic sync</h3>
+                <div class="pipeline" id="pipeline"><span class="muted">Loading…</span></div>
                 <div class="scheduler-state"><span class="muted">Loading…</span></div>
                 <div class="scheduler-last"></div>
                 <div class="event-row" id="schedulerButtons">
@@ -196,8 +189,34 @@ The cat sat on the mat.</textarea>
                 </div>
             </div>
 
-            <div class="card difference">
-                <h3>See the difference: eTag vs content hash</h3>
+            <div class="card history" id="historyCard">
+                <h3>Sync activity</h3>
+                <p class="muted">Which files changed, when, and what the sync did. Runs that found nothing new are folded into one line;
+                    <b>Full plan</b> shows every document of a run.</p>
+                <div class="history-bar">
+                    <select id="historyFile"><option value="">All files</option></select>
+                    <span class="muted" id="historySummary"></span>
+                </div>
+                <div class="scroll-x" id="historyOutput"><span class="muted">Loading…</span></div>
+                <div class="output" id="historyDetail"></div>
+            </div>
+
+            <p class="tab-group sync-tools-title">Learn and debug</p>
+            <details class="card tools">
+                <summary>Run a sync by hand: dry run or apply <code>POST /sync</code></summary>
+                <p class="muted">The same job the timer runs. A dry run only shows the plan and writes nothing.</p>
+                <form id="syncForm">
+                    <label class="check">
+                        <input type="checkbox" id="syncApply">
+                        Apply the plan (write to the index). Unticked = dry run.
+                    </label>
+                    <button type="submit">Run sync</button>
+                </form>
+                <div class="output" id="syncOutput"></div>
+            </details>
+
+            <details class="card difference">
+                <summary>See the difference: eTag vs content hash for one document</summary>
                 <p class="muted"><b>1.</b> Change the source: edit a file in Drive, or replay a weekend event when the source is the local folder.
                     <b>2.</b> Compare the document it touched. Both only read the index; nothing is written to it.</p>
                 <div class="event-row" id="eventButtons"><span class="muted">Loading the weekend…</span></div>
@@ -206,9 +225,9 @@ The cat sat on the mat.</textarea>
                     <button type="submit">Compare</button>
                 </form>
                 <div class="output" id="explainOutput"></div>
-            </div>
+            </details>
 
-            <details class="card explain" open>
+            <details class="card explain">
                 <summary>How the sync spots a change: eTag, content hash, labels</summary>
                 <p>Three fingerprints per document, checked cheapest first. Only a changed
                     <b>content hash</b> costs embedding money.</p>
@@ -272,7 +291,6 @@ The cat sat on the mat.</textarea>
                     In the plan, ENG-WIKI-VECTOR-DB shows a changed eTag next to an identical content hash.</p>
             </details>
 
-            <div class="output" id="syncOutput"></div>
         </section>
 
         <!-- ---------- Store: GET /store/inspect ---------- -->
@@ -318,6 +336,9 @@ The cat sat on the mat.</textarea>
         </section>
     </main>
 </div>
+
+<!-- A sync that changed the index, announced on whatever tab is open -->
+<div class="toast" id="changeToast" role="status" aria-live="polite" hidden></div>
 
 <script src="/static/ui.js"></script>
 </body>

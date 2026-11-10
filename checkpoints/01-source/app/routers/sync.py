@@ -15,8 +15,12 @@
 # NEW in Part 1: the scheduler (app/ingest/scheduler.py). When
 # SYNC_INTERVAL_SECONDS > 0 the job also runs on its own, inside
 # the API process.
-#   GET  /sync/status           -> on or off, last run, next run, last plan
+#   GET  /sync/status           -> on or off, last run, next run, last plan,
+#                                  and the last runs that CHANGED the index
 #   POST /sync/now              -> one tick right now (so a demo never waits 60 s)
+#   GET  /sync/history          -> every applied run from runs/: which files
+#                                  changed, when, what the sync did, who changed them
+#   GET  /sync/runs/{run_id}    -> one run's full report
 #   POST /sync/pause, /sync/resume
 #
 # The manual run and the scheduled run share one lock, so they never
@@ -25,7 +29,7 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.ingest import scheduler
+from app.ingest import history, scheduler
 from app.ingest.explain import explain_doc
 from app.ingest.sync import ModelMismatch, run_sync
 from app.models import SchedulerStatus, SyncDocAction, SyncResponse
@@ -40,7 +44,7 @@ def sync(
 ):
     """Compare the source with the index; plan or apply the changes."""
     try:
-        report = scheduler.run_locked(lambda: run_sync(apply=apply, rebuild=rebuild))
+        report = scheduler.run_locked(lambda: run_sync(apply=apply, rebuild=rebuild, trigger="manual"))
     except ModelMismatch as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except FileNotFoundError as exc:
@@ -54,7 +58,7 @@ def sync(
         estimated_tokens=report["estimated_tokens"],
         estimated_cost_usd=report["estimated_cost_usd"],
         warnings=report["warnings"],
-        documents=[SyncDocAction(**{k: d[k] for k in ("doc_id", "path", "action", "reason", "chunks", "signals")})
+        documents=[SyncDocAction(**{k: d[k] for k in ("doc_id", "path", "action", "reason", "chunks", "signals", "source")})
                    for d in report["documents"]],
         report_file=report.get("report_file"),
     )
@@ -69,7 +73,7 @@ def sync_status():
 @router.post("/now", response_model=SchedulerStatus)
 def sync_now():
     """One scheduled tick, right now: the same run_sync(apply=True) the timer calls."""
-    return scheduler.tick()
+    return scheduler.tick(trigger="run now")
 
 
 @router.post("/pause", response_model=SchedulerStatus)
@@ -92,3 +96,21 @@ def explain(doc_id: str = Query(description="A doc_id from the register, e.g. HR
         raise HTTPException(status_code=404, detail=f"No document {doc_id} in the register or the index")
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/history")
+def sync_history(
+    limit: int = Query(default=50, ge=1, le=500, description="How many runs that changed something to return."),
+    path: str | None = Query(default=None, description="Only the runs that changed this file, e.g. hr/leave-policy.md."),
+):
+    """Which files changed, when, and what the sync did: every applied run, from the reports in runs/."""
+    return history.history(limit=limit, path=path or None)
+
+
+@router.get("/runs/{run_id}")
+def sync_run(run_id: str):
+    """One applied run's full report (every document, unchanged ones too), e.g. sync-20261109-172843.json."""
+    try:
+        return history.report(run_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No report {run_id} in runs/")

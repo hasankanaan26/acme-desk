@@ -7,6 +7,7 @@ sync.py — the ingestion job. Compares the document source with the index.
     python sync.py --rebuild --apply
     python sync.py --rollback          # point queries back at the previous index
     python sync.py --source drive      # read the real Google Drive folder instead of .env's SOURCE
+    python sync.py --source onedrive   # read the OneDrive / SharePoint folder instead
     python sync.py --naive             # checkpoint 4's one-shot /ingest, into its own collection
     python sync.py --wipe              # delete every Acme Desk index (start the demo over)
 
@@ -73,7 +74,7 @@ def main() -> None:
     parser.add_argument("--apply", action="store_true", help="write to the index (default: dry run)")
     parser.add_argument("--rebuild", action="store_true", help="build a fresh index next to the live one")
     parser.add_argument("--rollback", action="store_true", help="switch back to the previous index")
-    parser.add_argument("--source", choices=["local", "drive"], help="override SOURCE from .env for this run")
+    parser.add_argument("--source", choices=["local", "drive", "onedrive"], help="override SOURCE from .env for this run")
     parser.add_argument("--naive", action="store_true", help="run checkpoint 4's /ingest into its own collection")
     parser.add_argument("--wipe", action="store_true", help="delete every Acme Desk index and the catalog")
     parser.add_argument("-v", "--verbose", action="store_true", help="also list unchanged documents")
@@ -81,14 +82,12 @@ def main() -> None:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 
     if args.wipe:
-        from app.config import CATALOG_FILE
-        from app.rag.store_chroma import drop_collection, get_client
-        names = [c if isinstance(c, str) else c.name for c in get_client().list_collections()]
-        for name in names:
+        from app.rag import store
+        for name in store.list_collections():
             if name.startswith("acme_"):
-                drop_collection(name)
-                print(f"dropped {name}")
-        CATALOG_FILE.unlink(missing_ok=True)
+                store.drop_collection(name)
+                print(f"dropped {name} from {store.LABEL}")
+        catalog.reset()
         print("Catalog removed. The next `python sync.py --apply` builds a fresh index.")
         return
 
@@ -106,7 +105,7 @@ def main() -> None:
         return
 
     try:
-        report = run_sync(apply=args.apply, rebuild=args.rebuild)
+        report = run_sync(apply=args.apply, rebuild=args.rebuild, trigger="cli")
     except ModelMismatch as exc:
         sys.exit(f"STOP: {exc}")
     except FileNotFoundError as exc:

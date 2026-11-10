@@ -46,7 +46,8 @@ EXPORTS = {
     "markdown": {"document": ("text/markdown", ".md"), "spreadsheet": ("text/csv", ".csv")},
     "html": {"document": ("text/html", ".html"), "spreadsheet": ("text/csv", ".csv")},
 }
-LIST_FIELDS = "nextPageToken, files(id,name,mimeType,md5Checksum,version,modifiedTime,size,webViewLink)"
+LIST_FIELDS = ("nextPageToken, files(id,name,mimeType,md5Checksum,version,modifiedTime,size,webViewLink,"
+               "lastModifyingUser(displayName,emailAddress))")
 
 
 # Purpose:
@@ -59,6 +60,14 @@ def build_service(credentials_path: Path):
 
     creds = service_account.Credentials.from_service_account_file(str(credentials_path), scopes=[DRIVE_READONLY])
     return build("drive", "v3", credentials=creds, cache_discovery=False)
+
+
+def _who(user: dict | None) -> str:
+    """Drive's lastModifyingUser as "Name <email>" (either part may be hidden from the service account)."""
+    if not user:
+        return ""
+    name, email = user.get("displayName", ""), user.get("emailAddress", "")
+    return f"{name} <{email}>" if name and email else name or email
 
 
 def _epoch(rfc3339: str | None) -> float:
@@ -156,6 +165,7 @@ class DriveConnector:
                 size=int(record.get("size") or 0),
                 modified=_epoch(record.get("modifiedTime")),
                 etag=etag,
+                modified_by=_who(record.get("lastModifyingUser")),
             ))
         return items
 

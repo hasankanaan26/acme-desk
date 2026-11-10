@@ -37,12 +37,13 @@ from app.config import (
     DRIVE_ROOT_FOLDER_ID,
     LLM_PROVIDER,
     NO_RESULT_DISTANCE,
+    ONEDRIVE_FOLDER,
     SOURCE,
     SOURCE_DIR,
 )
 from app.ingest import scheduler
 from app.llm import get_model_name
-from app.rag import catalog
+from app.rag import catalog, store
 from app.rag.doc_types import DOC_TYPES
 from app.rag.embedder import embedding_model_id
 from app.routers.ask import router as ask_router
@@ -108,17 +109,26 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 @app.get("/health")
 def health_check():
     """Health check — confirms the app is running and shows active settings."""
-    info = catalog.active_info()
+    try:
+        live, info, store_error = catalog.active_name(), catalog.active_info(), None
+    except Exception as exc:  # noqa: BLE001 - the vector database is down: say so, don't 500
+        live, info, store_error = None, {}, str(exc)
     return {
-        "status": "ok",
+        "status": "ok" if store_error is None else "degraded",
         "checkpoint": "01-source",
         "llm_provider": LLM_PROVIDER,
         "model": get_model_name(),
         "embedding_model": embedding_model_id(),
-        "live_index": catalog.active_name(),
+        "vector_store": store.LABEL,
+        "vector_store_location": store.location(),
+        "vector_store_error": store_error,
+        "live_index": live,
         "live_index_built_with": info.get("embedding_model"),
         "source": SOURCE,
-        "source_location": str(SOURCE_DIR) if SOURCE == "local" else f"drive folder {DRIVE_ROOT_FOLDER_ID or '(not set)'}",
+        "source_location": {
+            "local": str(SOURCE_DIR),
+            "onedrive": f"onedrive folder {ONEDRIVE_FOLDER or '(the drive root)'}",
+        }.get(SOURCE, f"drive folder {DRIVE_ROOT_FOLDER_ID or '(not set)'}"),
         "scheduler": scheduler.status(),
         "default_user": DEFAULT_USER,
         "thresholds": {

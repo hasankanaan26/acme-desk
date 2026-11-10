@@ -60,6 +60,15 @@ def collection_exists(name: str) -> bool:
     return name in [c if isinstance(c, str) else c.name for c in get_client().list_collections()]
 
 
+def list_collections() -> list[str]:
+    return sorted(c if isinstance(c, str) else c.name for c in get_client().list_collections())
+
+
+def location() -> str:
+    """Where the vectors are: the ChromaDB folder."""
+    return str(CHROMA_PATH)
+
+
 def drop_collection(name: str) -> None:
     try:
         get_client().delete_collection(name=name)

@@ -84,6 +84,7 @@ class DocPlan:
     pii: dict = field(default_factory=dict)
     remove_old: bool = False
     signals: dict = field(default_factory=dict)  # the evidence behind the action, see _signals()
+    source: dict = field(default_factory=dict)   # the file as the source lists it: modified, by whom, size
 
 
 @dataclass
@@ -266,6 +267,14 @@ def build_plan(connector: Connector, collection: str | None, full: bool = False)
 
     warnings.extend(register_warnings(entries))
 
+    # When the source last saw each file change, and who changed it.
+    for d in docs:
+        item = items.get(d.path)
+        if item:
+            d.source = {"modified": datetime.fromtimestamp(item.modified).isoformat(timespec="seconds")
+                        if item.modified else None,
+                        "modified_by": item.modified_by or None, "size": item.size}
+
     # Documents that quote a document that just changed may now be wrong.
     # (Skipped on a full build: everything is "new" then, nothing changed.)
     full_build = full or not exists
@@ -350,7 +359,7 @@ def summarize(plan: SyncPlan, applied: bool) -> dict:
         "warnings": plan.warnings,
         "documents": [
             {"doc_id": d.doc_id, "path": d.path, "action": d.action, "reason": d.reason,
-             "chunks": len(d.chunks), "pii": d.pii, "signals": d.signals}
+             "chunks": len(d.chunks), "pii": d.pii, "signals": d.signals, "source": d.source}
             for d in plan.docs
         ],
     }
@@ -368,8 +377,12 @@ def write_report(report: dict) -> str:
 # Purpose:
 # One sync run. Without apply=True it only plans. With rebuild=True it
 # builds a NEW collection next to the live one and switches over only
-# if the smoke check passes (blue/green).
-def run_sync(apply: bool = False, rebuild: bool = False, connector: Connector | None = None) -> dict:
+# if the smoke check passes (blue/green). `trigger` (tick, run now,
+# manual, cli) is written into the report, so the UI can say who
+# started a run even after a restart.
+def run_sync(apply: bool = False, rebuild: bool = False, connector: Connector | None = None,
+             trigger: str | None = None) -> dict:
+    started_at = datetime.now().isoformat(timespec="seconds")
     connector = connector or make_connector()
     active = catalog.active_name()
     if active and not store.collection_exists(active):
@@ -384,6 +397,11 @@ def run_sync(apply: bool = False, rebuild: bool = False, connector: Connector | 
         )
 
     new_index = rebuild or not active
+    # Why every document is about to be embedded again, in words the UI shows.
+    build_reason = None
+    if new_index:
+        build_reason = ("a rebuild was asked for (python sync.py --rebuild)" if rebuild and active
+                        else f"there was no live index in {store.LABEL} yet")
     target = catalog.new_collection_name() if new_index else active
     plan = build_plan(connector, target, full=new_index)
 
@@ -391,16 +409,23 @@ def run_sync(apply: bool = False, rebuild: bool = False, connector: Connector | 
         return summarize(plan, applied=False)
 
     report = apply_plan(plan)
+    report["trigger"] = trigger
+    report["started_at"] = started_at
+    report["vector_store"] = store.LABEL
+    report["vector_store_location"] = store.location()
+    report["build_reason"] = build_reason
     if new_index:
         problems = smoke_check(plan)
         report["smoke_check"] = problems or ["ok"]
         if problems:
             report["activated"] = False
+            report["finished_at"] = datetime.now().isoformat(timespec="seconds")
             report["report_file"] = write_report(report)
             return report
         previous = catalog.active_name()
         catalog.activate(target)
         report["activated"] = True
         report["previous_collection"] = previous
+    report["finished_at"] = datetime.now().isoformat(timespec="seconds")
     report["report_file"] = write_report(report)
     return report

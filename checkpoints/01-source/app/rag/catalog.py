@@ -25,18 +25,38 @@
 import json
 from datetime import datetime
 
-from app.config import CATALOG_FILE
+from app.config import CATALOG_FILE, VECTOR_STORE
+
+# With VECTOR_STORE=postgres the catalog is a row in the same database
+# as the index it points at (store_pg.py), not a file: one place to
+# back up, and the pointer can never name an index in another store.
+EMPTY = {"active": None, "previous": None, "collections": {}}
 
 
 def load_catalog() -> dict:
+    if VECTOR_STORE == "postgres":
+        from app.rag import store_pg
+        return store_pg.load_catalog() or json.loads(json.dumps(EMPTY))
     if CATALOG_FILE.exists():
         return json.loads(CATALOG_FILE.read_text(encoding="utf-8"))
-    return {"active": None, "previous": None, "collections": {}}
+    return json.loads(json.dumps(EMPTY))
 
 
 def save_catalog(catalog: dict) -> None:
+    if VECTOR_STORE == "postgres":
+        from app.rag import store_pg
+        store_pg.save_catalog(catalog)
+        return
     CATALOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     CATALOG_FILE.write_text(json.dumps(catalog, indent=2), encoding="utf-8")
+
+
+def reset() -> None:
+    """Forget every index (sync.py --wipe). The next sync builds a fresh one."""
+    if VECTOR_STORE == "postgres":
+        save_catalog(json.loads(json.dumps(EMPTY)))
+    else:
+        CATALOG_FILE.unlink(missing_ok=True)
 
 
 def active_name() -> str | None:

@@ -346,3 +346,65 @@ td code { font-family: var(--mono); font-size: 0.95em; }
 .meta-group { color: var(--muted); font-size: 0.85em; font-weight: 600; padding-top: 10px; }
 
 .plot { max-width: 100%; height: auto; border-radius: 8px; background: #fff; display: block; }
+
+/* A sync that changed the index: the top-bar chip and the toast */
+.chip.link { cursor: pointer; border-color: var(--high-fg); background: var(--high-bg); color: var(--high-fg); }
+.chip.link:hover { text-decoration: underline; }
+button.link {
+    background: none; border: none; padding: 0; color: var(--accent);
+    font: inherit; font-weight: 500; cursor: pointer; text-decoration: underline;
+}
+.toast {
+    position: fixed; right: 20px; bottom: 20px; z-index: 50;
+    width: min(380px, calc(100vw - 32px));
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-left: 4px solid var(--high-fg); border-radius: var(--radius);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    padding: 12px 14px; font-size: 0.9em;
+    display: flex; flex-direction: column; gap: 8px;
+}
+.toast[hidden] { display: none; }
+.toast-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.toast ul { padding-left: 18px; }
+.toast-warn { background: var(--medium-bg); color: var(--medium-fg); border-radius: 6px; padding: 6px 8px; font-size: 0.9em; }
+.toast-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.toast-foot button { padding: 6px 12px; font-size: 0.9em; }
+button.toast-close {
+    background: none; border: none; color: var(--muted); padding: 0 4px;
+    font-size: 1.3em; line-height: 1; cursor: pointer;
+}
+button.toast-close:hover { color: var(--text); }
+@keyframes flash-in { from { box-shadow: 0 0 0 4px var(--high-fg); } to { box-shadow: 0 0 0 0 transparent; } }
+.flash { animation: flash-in 1.6s ease-out; }
+@media (prefers-reduced-motion: reduce) { .flash { animation: none; } }
+
+/* Sync history: one row per file a run changed, quiet runs folded into one line */
+.history { display: flex; flex-direction: column; gap: 10px; }
+.history-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.history-bar select { width: auto; max-width: 100%; }
+.history-table { font-size: 0.88em; }
+.history-table td { vertical-align: top; }
+.history-table .when-cell { white-space: nowrap; }
+.history-table .did-cell { min-width: 220px; }   /* what the sync did: the sentence that matters */
+.history-table .src-cell { min-width: 120px; }
+.history-table .run-cell { min-width: 120px; }
+.history-table td:nth-child(n) .muted { font-size: 0.9em; }
+.history-table tr.quiet td { color: var(--muted); background: var(--surface-2); font-size: 0.9em; text-align: center; padding: 5px 8px; }
+.history-table tr.history-warn td { color: var(--medium-fg); background: var(--medium-bg); font-size: 0.9em; }
+.history-detail-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; }
+.history-detail-head h4 { font-size: 0.92em; }
+
+/* Sync tab: where the documents come from and where the vectors go */
+.scheduler { display: flex; flex-direction: column; gap: 8px; }
+.scheduler .meta { margin-top: 0; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.9em; }
+.flow .node { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; font-weight: 600; }
+.flow .node.store { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.flow .arrow { color: var(--muted); }
+.history-table tr.latest td { background: var(--accent-soft); }
+.sync-tools-title { margin-top: 18px; }
+details.card > summary { cursor: pointer; font-weight: 600; font-size: 0.95em; }
+details.card[open] > summary { margin-bottom: 10px; }
+details.tools form { margin: 10px 0; }
+details.difference { display: block; }
+details.difference[open] { display: flex; }

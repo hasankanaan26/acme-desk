@@ -26,6 +26,8 @@ Two things are the same on both sides and worth saying out loud:
 
 ## What would change in this repo
 
+It has: `checkpoints/01-source/app/ingest/connector_onedrive.py` reads OneDrive and SharePoint libraries through Graph, with `SOURCE=onedrive` (setup in [onedrive-setup.md](onedrive-setup.md)). It lists by walking `/children` rather than `/delta`, and signs in with plain `httpx` calls to the token endpoint rather than `msal`. The sketch it grew from:
+
 One file. A `SharePointConnector` with the same four methods as `DriveConnector`:
 
 ```python

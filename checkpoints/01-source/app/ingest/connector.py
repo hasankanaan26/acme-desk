@@ -15,6 +15,9 @@
 #   DriveConnector         a real Google Drive folder, read through a
 #                          service account (SOURCE=drive), in
 #                          connector_drive.py
+#   OneDriveConnector      a OneDrive or SharePoint folder, read through
+#                          Microsoft Graph (SOURCE=onedrive), in
+#                          connector_onedrive.py
 # make_connector() picks one from .env. Nothing else in the pipeline
 # knows which one it got.
 #
@@ -38,7 +41,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from app.config import DRIVE_DOC_EXPORT, DRIVE_ROOT_FOLDER_ID, DRIVE_SA_KEY, REGISTER_FILENAME, SOURCE, SOURCE_DIR
+from app.config import (
+    DRIVE_DOC_EXPORT,
+    DRIVE_ROOT_FOLDER_ID,
+    DRIVE_SA_KEY,
+    ONEDRIVE_AUTH,
+    ONEDRIVE_CLIENT_ID,
+    ONEDRIVE_CLIENT_SECRET,
+    ONEDRIVE_DRIVE,
+    ONEDRIVE_FOLDER,
+    ONEDRIVE_TENANT_ID,
+    ONEDRIVE_TOKEN_CACHE,
+    REGISTER_FILENAME,
+    SOURCE,
+    SOURCE_DIR,
+)
 
 
 def etag_of(data: bytes) -> str:
@@ -53,6 +70,7 @@ class SourceItem:
     size: int        # bytes
     modified: float  # last-modified time (seconds since epoch)
     etag: str        # changes whenever the bytes change
+    modified_by: str = ""  # who saved it last, when the source says (Drive does; a folder does not)
 
 
 class Connector(Protocol):
@@ -108,10 +126,17 @@ class LocalFolderConnector:
 
 # Purpose:
 # The connector .env asks for. SOURCE=drive needs a service-account
-# key and a folder id; anything else is the local folder.
+# key and a folder id; SOURCE=onedrive an app registration and a
+# folder path; anything else is the local folder.
 def make_connector() -> Connector:
     if SOURCE == "drive":
         from app.ingest.connector_drive import DriveConnector  # lazy: the Google libraries load only when used
 
         return DriveConnector(DRIVE_ROOT_FOLDER_ID, DRIVE_SA_KEY, DRIVE_DOC_EXPORT)
+    if SOURCE == "onedrive":
+        from app.ingest.connector_onedrive import OneDriveConnector, drive_base, make_auth
+
+        auth = make_auth(ONEDRIVE_AUTH, ONEDRIVE_TENANT_ID, ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET,
+                         ONEDRIVE_TOKEN_CACHE)
+        return OneDriveConnector(auth, drive_base(ONEDRIVE_DRIVE, ONEDRIVE_AUTH), ONEDRIVE_FOLDER)
     return LocalFolderConnector(SOURCE_DIR)

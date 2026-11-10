@@ -67,6 +67,10 @@ OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 #               account (app/ingest/connector_drive.py). The register
 #               is REGISTER_FILE, or _register.json in the Drive root
 #               when REGISTER_SOURCE=drive.
+# SOURCE=onedrive  a OneDrive (or SharePoint library) folder, read
+#               through Microsoft Graph (app/ingest/connector_onedrive.py).
+#               The register as for drive; REGISTER_SOURCE=drive reads
+#               _register.json from the OneDrive folder.
 SOURCE = os.getenv("SOURCE", "local")
 SEED_DIR = _path(os.getenv("SEED_DIR", "shared/data"))
 SOURCE_DIR = _path(os.getenv("SOURCE_DIR", "workspace/local-drive"))
@@ -79,6 +83,17 @@ IDENTITIES_FILE = _path(os.getenv("IDENTITIES_FILE", "shared/data/identities.jso
 DRIVE_SA_KEY = _path(os.getenv("DRIVE_SA_KEY", "secrets/acme-desk-sa.json"))
 DRIVE_ROOT_FOLDER_ID = os.getenv("DRIVE_ROOT_FOLDER_ID", "")
 DRIVE_DOC_EXPORT = os.getenv("DRIVE_DOC_EXPORT", "markdown")  # markdown | html, for native Google Docs
+
+# --- OneDrive / SharePoint (SOURCE=onedrive), see docs/onedrive-setup.md ---
+# app     client credentials (tenant id + client id + secret), work/school only
+# device  a person signs in once (onedrive_admin.py login), any account
+ONEDRIVE_AUTH = os.getenv("ONEDRIVE_AUTH", "device").strip().lower()
+ONEDRIVE_TENANT_ID = os.getenv("ONEDRIVE_TENANT_ID", "")       # directory id; device + personal account: consumers
+ONEDRIVE_CLIENT_ID = os.getenv("ONEDRIVE_CLIENT_ID", "")       # the app registration's Application (client) ID
+ONEDRIVE_CLIENT_SECRET = os.getenv("ONEDRIVE_CLIENT_SECRET", "")  # app only
+ONEDRIVE_DRIVE = os.getenv("ONEDRIVE_DRIVE", "")               # "" = your own (device); a UPN; or a drive id
+ONEDRIVE_FOLDER = os.getenv("ONEDRIVE_FOLDER", "Acme Corp Documents")  # path from the drive's root
+ONEDRIVE_TOKEN_CACHE = _path(os.getenv("ONEDRIVE_TOKEN_CACHE", "secrets/onedrive-token.json"))  # device only
 
 # --- The scheduler ---
 # 0 = off: the sync runs only when asked (python sync.py, POST /sync).
@@ -121,7 +136,18 @@ RUNS_DIR = _path(os.getenv("ACME_RUNS_DIR", str(CHECKPOINT_DIR / "runs")))
 # --- Kept from the RAG module ---
 DEFAULT_CHUNK_SIZE = int(os.getenv("DEFAULT_CHUNK_SIZE", "500"))
 DEFAULT_CHUNK_OVERLAP = int(os.getenv("DEFAULT_CHUNK_OVERLAP", "50"))
-VECTOR_STORE = "chroma"
+# Where the chunks and vectors live:
+#   chroma    files on disk in CHROMA_PATH (the class default; no server)
+#   postgres  Postgres + pgvector, the docker compose `db` service on
+#             port 5433, in its own database so it never touches Part 2's
+#             tables. Start it with: docker compose up -d db
+VECTOR_STORE = os.getenv("VECTOR_STORE", "chroma").strip().lower()
+if VECTOR_STORE not in ("chroma", "postgres"):
+    raise ValueError(f"VECTOR_STORE must be chroma or postgres, not {VECTOR_STORE!r}")
+VECTOR_DB_URL = os.getenv(
+    "VECTOR_DB_URL",
+    f"postgresql://postgres:{os.getenv('POSTGRES_PASSWORD', 'postgres-local-only')}@localhost:5433/acme_part1",
+)
 
 # --- Confidence thresholds ---
 # Squared L2 distance between normalized vectors: 0 = identical, 2 = unrelated.

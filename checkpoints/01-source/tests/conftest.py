@@ -25,6 +25,7 @@ os.environ["SOURCE_DIR"] = str(TMP / "local-drive")
 os.environ["CHROMA_PATH"] = str(TMP / "chroma")
 os.environ["ACME_RUNS_DIR"] = str(TMP / "runs")
 os.environ["EMBEDDING_PROVIDER"] = "fake"
+os.environ["VECTOR_STORE"] = "chroma"   # .env may say postgres; test_store_pg.py covers that one
 os.environ["EMBED_RETRY_BASE_SECONDS"] = "0"
 os.environ["SYNC_INTERVAL_SECONDS"] = "0"
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
