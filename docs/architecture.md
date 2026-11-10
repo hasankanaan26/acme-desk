@@ -19,9 +19,10 @@ you would expect.
   (role acme_app)              (never from the request body); admin pages for
                                people, groups and document access
         ▼
-  the assistant                a LangGraph workflow: identify → retrieve → answer  ← Part 2
-  (one thread per              identify = the session's Principal;
-   conversation)               retrieved text is data, never instructions
+  the assistant                a LangGraph workflow: identify → retrieve →         ← Part 2
+  (one thread per              answer → finalize; identify = the session's
+   conversation)               Principal; hybrid retrieval (pgvector + full-text);
+                               memory in Postgres, visible only to its owner
         ▼
   tools                        allowlist by group → argument validation → policy   ← Part 3
   (the only writes)            in code → human approval → idempotency key → audit
@@ -54,7 +55,7 @@ you would expect.
 | which index is live | Part 1: `acme_catalog.json`. Part 2: `tenants.live_index` | `app/rag/catalog.py` (blue/green) |
 | sync runs | Part 1: `runs/sync-*.json` and process memory. Part 2: `sync_runs`, `sync_requests`, `workers` | the worker |
 | sessions, sign-in attempts, audit | Part 2: `sessions`, `login_attempts`, `audit_log` | the API |
-| conversations (Part 2) | Postgres, through the LangGraph checkpointer, one thread per conversation | the graph |
+| conversations (Part 2) | `chat_threads` (one row per conversation, visible only to its owner) and LangGraph's checkpoint tables, whose rows are visible only through a thread you own | the person who started it |
 | approvals, audit, tickets (Part 3) | Postgres tables, under the same Row-Level Security | the tools layer |
 
 ## Why these choices

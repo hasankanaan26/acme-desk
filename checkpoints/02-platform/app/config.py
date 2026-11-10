@@ -143,3 +143,24 @@ RUNS_DIR = _path(os.getenv("ACME_RUNS_DIR", str(CHECKPOINT_DIR / "runs")))
 CONFIDENCE_HIGH_THRESHOLD = float(os.getenv("CONFIDENCE_HIGH_THRESHOLD", "0.8"))
 CONFIDENCE_LOW_THRESHOLD = float(os.getenv("CONFIDENCE_LOW_THRESHOLD", "1.4"))
 NO_RESULT_DISTANCE = float(os.getenv("NO_RESULT_DISTANCE", "1.6"))
+
+# --- Retrieval: how the search finds passages ---
+#   dense    by meaning: pgvector, the same search as Part 1
+#   keyword  by words: Postgres full-text search on the same chunks
+#   hybrid   both, fused by rank (Reciprocal Rank Fusion)
+# Every strategy runs inside the same access filter. /search takes
+# ?strategy= to compare them side by side.
+RETRIEVAL_STRATEGIES = ("dense", "keyword", "hybrid")
+_requested_strategy = os.getenv("RETRIEVAL_STRATEGY", "hybrid").split("#")[0].strip().lower() or "hybrid"
+RETRIEVAL_STRATEGY = _requested_strategy if _requested_strategy in RETRIEVAL_STRATEGIES else "hybrid"
+# Shown in /health when .env asks for something this checkpoint does not have.
+RETRIEVAL_STRATEGY_NOTE = (None if _requested_strategy in RETRIEVAL_STRATEGIES else
+                           f"RETRIEVAL_STRATEGY={_requested_strategy} is not available here; using hybrid")
+HYBRID_CANDIDATES = int(os.getenv("HYBRID_CANDIDATES", "20"))  # how deep each list goes before fusing
+RRF_K = 60  # the usual constant: a rank-1 hit scores 1/61, rank 10 scores 1/70
+
+# --- The chat (Part 2, last block) ---
+# How many earlier question + answer pairs the model sees. The thread
+# keeps everything; the prompt keeps the last few.
+HISTORY_TURNS = int(os.getenv("HISTORY_TURNS", "6"))
+CHAT_TOP_K = int(os.getenv("CHAT_TOP_K", "5"))

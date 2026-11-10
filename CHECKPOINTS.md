@@ -36,13 +36,23 @@ intern `hr` → the bands come back on the next search → the audit log shows b
 Unchanged: the connectors, parsers, PII redaction, chunker, decision ladder and blue/green. Same top 5
 for all 24 golden retrieval questions as Part 1's ChromaDB.
 
-Endpoints: `POST /auth/login|logout|password`, `GET /auth/me`, `GET /search`, `POST /query`,
-`GET /documents`, `GET /sync/status|runs|runs/{id}`, `POST /sync/now|pause|resume`,
-`/admin/users`, `/admin/groups`, `PATCH /admin/documents/{doc_id}`, `GET /admin/audit`, `/login`, `/ui`, `/health`.
+Endpoints: `POST /auth/login|logout|password`, `GET /auth/me`, `GET /search` (`?strategy=dense|keyword|hybrid`),
+`POST /query`, `GET /chat/threads`, `POST /chat/threads`, `GET /chat/threads/{id}`,
+`POST /chat/threads/{id}/messages` (Server-Sent Events), `GET /documents`, `GET /sync/status|runs|runs/{id}`,
+`POST /sync/now|pause|resume`, `/admin/users`, `/admin/groups`, `PATCH /admin/documents/{doc_id}`,
+`GET /admin/audit`, `/login`, `/ui`, `/health`.
 
-Planned for the session's last block: the chat assistant on this platform, a LangGraph workflow
-(`identify → retrieve → answer → finalize`) whose `identify` node is the session's Principal, the
-Postgres checkpointer, hybrid retrieval with Postgres full-text search next to pgvector, streaming.
+The session's last block, the chat: a LangGraph workflow (`identify → retrieve → answer → finalize`,
+one branch) whose `identify` node is the session's Principal; follow-ups rewritten into standalone
+questions; the Postgres checkpointer, with its tables under a policy that shows a conversation only to
+the person who started it; every turn re-checks the documents earlier answers used and hides the ones
+built on a document the person can no longer read; hybrid retrieval (pgvector + Postgres full-text,
+fused by rank); the reply streamed as Server-Sent Events (`app/assistant/`, `app/routers/chat.py`).
+88 tests.
+
+Demo flow, chat: the team dinner limit ($90), "And for a client dinner?" ($150, the follow-up rewritten)
+→ give the intern `hr`, the salary bands in a new conversation → take `hr` away, "And for a junior?":
+no information, and the earlier answer is hidden → the same thread as `hr-partner`: 404.
 
 ## 03-tools: tools and agents with real security controls (Part 3, Fri 13 Nov)
 

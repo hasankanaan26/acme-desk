@@ -147,7 +147,9 @@ def friday(tenants):
         conn.execute("UPDATE tenants SET live_index = NULL, previous_index = NULL, sync_paused = false")
         conn.execute("DELETE FROM search_indexes WHERE tenant_id = %s", (tenants["acme"],))
         conn.execute("DELETE FROM sync_runs; DELETE FROM sync_requests; DELETE FROM sessions; "
-                     "DELETE FROM login_attempts; DELETE FROM audit_log; DELETE FROM workers")
+                     "DELETE FROM login_attempts; DELETE FROM audit_log; DELETE FROM workers; "
+                     "DELETE FROM chat_threads; DELETE FROM checkpoint_writes; DELETE FROM checkpoint_blobs; "
+                     "DELETE FROM checkpoints")
     fake_drive.reset()
     from app.db.seed import seed
 

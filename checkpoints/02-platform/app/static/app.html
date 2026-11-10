@@ -33,6 +33,7 @@
 <div class="layout">
     <nav class="tabs" id="tabs">
         <p class="tab-group">Answer</p>
+        <a href="#chat" data-tab="chat">Chat</a>
         <a href="#query" data-tab="query">Ask</a>
         <a href="#search" data-tab="search">Search</a>
         <p class="tab-group">Library</p>
@@ -46,6 +47,32 @@
     </nav>
 
     <main>
+        <!-- ---------- Chat: /chat/threads, streamed ---------- -->
+        <section data-panel="chat">
+            <h2>Chat</h2>
+            <p class="hint">A conversation that remembers. Every turn searches only what <b>you</b> may read today, and an earlier answer built on a document you have lost is hidden. The steps and the tokens stream in as they happen. <code>POST /chat/threads/{id}/messages</code></p>
+            <div class="chat">
+                <aside class="chat-threads">
+                    <button type="button" id="newChat">New conversation</button>
+                    <ul id="threadList"></ul>
+                </aside>
+                <div class="chat-main">
+                    <div class="chat-log" id="chatLog"></div>
+                    <form class="ask-row" id="chatForm">
+                        <input type="text" id="chatInput" placeholder="Ask about Acme Corp policies…" autocomplete="off" required maxlength="2000">
+                        <button type="submit">Send</button>
+                    </form>
+                    <div class="samples" data-target="chatInput">
+                        <span>What is the salary range for a Senior Developer?</span>
+                        <span>And for a junior?</span>
+                        <span>How much can I spend per person on a team dinner?</span>
+                        <span>And for a client dinner?</span>
+                        <span>How many unused vacation days can I roll over?</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- ---------- Ask: POST /query ---------- -->
         <section data-panel="query">
             <h2>Ask</h2>
@@ -88,10 +115,16 @@
         <!-- ---------- Search: GET /search ---------- -->
         <section data-panel="search">
             <h2>Search</h2>
-            <p class="hint">Retrieval only, no LLM: the closest chunks among the documents you may read. <code>GET /search</code></p>
+            <p class="hint">Retrieval only, no LLM: the closest chunks among the documents you may read. Each result says whether it was found by its meaning, its words, or both. <code>GET /search</code></p>
             <form class="ask-row" id="searchForm">
                 <input type="text" id="searchQuery" placeholder="Search the knowledge base…" autocomplete="off" required maxlength="1000">
                 <input type="number" id="searchTopK" min="1" max="20" value="5" title="top_k" class="narrow">
+                <select id="searchStrategy" title="How the search ranks" class="auto">
+                    <option value="">.env default</option>
+                    <option value="dense">by meaning (pgvector)</option>
+                    <option value="keyword">by words (full-text)</option>
+                    <option value="hybrid">hybrid (both, fused)</option>
+                </select>
                 <button type="submit">Search</button>
             </form>
             <div class="samples" data-target="searchQuery">

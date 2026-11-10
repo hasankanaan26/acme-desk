@@ -16,6 +16,7 @@ from app.rag.store_pg import (  # noqa: F401  (re-exported)
     delete_doc,
     drop_collection,
     index_state,
+    keyword_search,
     search,
     update_doc_labels,
 )

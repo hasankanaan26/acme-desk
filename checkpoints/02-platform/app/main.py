@@ -15,6 +15,9 @@
 #   - three database roles: the API cannot write chunks, the worker
 #     cannot read users, only db.py can change the schema
 #   - the sync is a separate worker process (python worker.py)
+#   - the chat: a LangGraph workflow (identify -> retrieve -> answer
+#     -> finalize) with its memory in Postgres, under the same rules,
+#     hybrid retrieval, streamed to the browser (app/assistant/)
 #
 # Unchanged from Part 1: the connector, parsers, PII redaction, the
 # chunker, the sync's decision ladder, blue/green indexes, and every
@@ -34,6 +37,8 @@ from app.config import (
     CONFIDENCE_LOW_THRESHOLD,
     LLM_PROVIDER,
     NO_RESULT_DISTANCE,
+    RETRIEVAL_STRATEGY,
+    RETRIEVAL_STRATEGY_NOTE,
     VECTOR_STORE,
 )
 from app.llm import get_model_name
@@ -41,6 +46,7 @@ from app.rag.doc_types import DOC_TYPES
 from app.rag.embedder import embedding_model_id
 from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
+from app.routers.chat import router as chat_router
 from app.routers.documents import router as documents_router
 from app.routers.query import router as query_router
 from app.routers.search import router as search_router
@@ -58,13 +64,14 @@ logging.getLogger("psycopg.pool").setLevel(logging.WARNING)
 
 app = FastAPI(
     title="Acme Desk — Employee Helpdesk",
-    description="Part 2: the platform. Postgres + pgvector, sign-in, per-user access, tenants, a sync worker.",
+    description="Part 2: the platform. Postgres + pgvector, sign-in, per-user access, tenants, a sync worker, the chat.",
     version="2.0.0",
 )
 
 app.include_router(auth_router)
 app.include_router(search_router)
 app.include_router(query_router)
+app.include_router(chat_router)
 app.include_router(documents_router)
 app.include_router(sync_router)
 app.include_router(admin_router)
@@ -92,6 +99,8 @@ def health_check():
         "checkpoint": "02-platform",
         "database": database,
         "vector_store": VECTOR_STORE,
+        "retrieval": RETRIEVAL_STRATEGY,
+        "retrieval_note": RETRIEVAL_STRATEGY_NOTE,
         "llm_provider": LLM_PROVIDER,
         "model": get_model_name(),
         "embedding_model": embedding_model_id(),

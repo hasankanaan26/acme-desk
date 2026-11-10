@@ -19,6 +19,10 @@
 #     forbidden text has already left the database.
 #   - tell the LLM "don't reveal salaries": the text is in its
 #     context window. A prompt is not an access control.
+#
+# With the chat block, the search can rank by meaning, by words, or
+# both (RETRIEVAL_STRATEGY, default hybrid). Both searches run inside
+# the same filter, so fusing them can never let a forbidden chunk in.
 # ============================================================
 
 from datetime import date
@@ -26,12 +30,16 @@ from datetime import date
 from app.config import (
     CONFIDENCE_HIGH_THRESHOLD,
     CONFIDENCE_LOW_THRESHOLD,
+    HYBRID_CANDIDATES,
     NO_RESULT_DISTANCE,
+    RETRIEVAL_STRATEGIES,
+    RETRIEVAL_STRATEGY,
+    RRF_K,
 )
 from app.ingest.register import date_int
 from app.rag.classifier import classify_question
 from app.rag.embedder import embed_text
-from app.rag.store import Access, count, search
+from app.rag.store import Access, count, keyword_search, search
 
 
 # Purpose:
@@ -52,10 +60,46 @@ def check_date(as_of: str | None) -> str | None:
 # Purpose:
 # Embed the question and search, inside the user's filter.
 def retrieve(query: str, group_ids, top_k: int = 3, as_of: str | None = None,
-             doc_type: str | None = None) -> list[dict]:
+             doc_type: str | None = None, strategy: str | None = None) -> list[dict]:
     if count() == 0:
         return []
-    return search(embed_text(query), top_k=top_k, access=access_filter(group_ids, check_date(as_of), doc_type))
+    access = access_filter(group_ids, check_date(as_of), doc_type)
+    return find(query, embed_text(query), top_k, access, strategy)
+
+
+# Purpose:
+# One search, three ways to rank, the same access filter for all:
+#   dense    by meaning (pgvector)
+#   keyword  by words (Postgres full-text)
+#   hybrid   both lists, fused by rank
+def find(query: str, embedding: list[float], top_k: int, access: Access, strategy: str | None = None) -> list[dict]:
+    strategy = strategy or RETRIEVAL_STRATEGY
+    if strategy not in RETRIEVAL_STRATEGIES:
+        raise ValueError(f"strategy must be one of {', '.join(RETRIEVAL_STRATEGIES)}")
+    if strategy == "dense":
+        return [{**c, "found_by": ["meaning"]} for c in search(embedding, top_k=top_k, access=access)]
+    if strategy == "keyword":
+        return [{**c, "found_by": ["words"]} for c in keyword_search(query, embedding, top_k=top_k, access=access)]
+    depth = max(top_k, HYBRID_CANDIDATES)
+    by_meaning = search(embedding, top_k=depth, access=access)
+    by_words = keyword_search(query, embedding, top_k=depth, access=access)
+    return fuse({"meaning": by_meaning, "words": by_words}, top_k)
+
+
+# Purpose:
+# Reciprocal Rank Fusion: merge ranked lists without comparing their
+# scores. A vector distance and a text rank are on different scales;
+# a rank is a rank. Each list gives a chunk 1 / (RRF_K + its rank), the
+# scores add up, and a chunk both lists agree on rises to the top.
+def fuse(ranked: dict[str, list[dict]], top_k: int) -> list[dict]:
+    scores: dict[str, float] = {}
+    chunks: dict[str, dict] = {}
+    for name, results in ranked.items():
+        for rank, chunk in enumerate(results, start=1):
+            scores[chunk["id"]] = scores.get(chunk["id"], 0.0) + 1.0 / (RRF_K + rank)
+            chunks.setdefault(chunk["id"], {**chunk, "found_by": []})["found_by"].append(name)
+    best = sorted(chunks.values(), key=lambda c: (-scores[c["id"]], c["distance"]))
+    return [{**c, "rrf": round(scores[c["id"]], 5)} for c in best[:top_k]]
 
 
 def choose_doc_type(query: str, filter_mode: str) -> dict:
@@ -99,14 +143,14 @@ def retrieve_with_doc_filter(
 
     query_embedding = embed_text(query)
     if doc_type is None:
-        result["chunks"] = search(query_embedding, top_k=top_k, access=access_filter(group_ids, as_of))
+        result["chunks"] = find(query, query_embedding, top_k, access_filter(group_ids, as_of))
         return result
 
-    filtered = search(query_embedding, top_k=top_k, access=access_filter(group_ids, as_of, doc_type))
+    filtered = find(query, query_embedding, top_k, access_filter(group_ids, as_of, doc_type))
     if filtered:
         result["filtered_best_distance"] = min(c["distance"] for c in filtered)
     if is_no_result(filtered, no_result_threshold=no_result_threshold):
-        result["chunks"] = search(query_embedding, top_k=top_k, access=access_filter(group_ids, as_of))
+        result["chunks"] = find(query, query_embedding, top_k, access_filter(group_ids, as_of))
         result["fallback_used"] = True
     else:
         result["chunks"] = filtered

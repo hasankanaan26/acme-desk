@@ -9,6 +9,9 @@ the code forgets to filter; and the sync becomes its own process with its own, s
 The test of it: an admin unticks one box ("employees may read the salary bands"), and the intern's
 very next question no longer finds them. No sync, no re-embedding, and an audit row says who did it.
 
+The session's last block puts a conversation on top: a chat that remembers, follows up, streams,
+and obeys the same rules on every turn, its own memory included.
+
 ## What's covered
 
 - **Postgres + pgvector holds the state.** Tenants, people, groups, the register, chunks and their
@@ -27,9 +30,24 @@ very next question no longer finds them. No sync, no re-embedding, and an audit 
   groups. The owner (`db.py`) changes the schema and is never used by a running process.
 - **The worker.** `worker.py` syncs every tenant on a timer and on "Run now", one sync per tenant at a
   time across any number of workers (a Postgres advisory lock), each sync in one transaction.
+- **The chat.** A LangGraph workflow, `identify → retrieve → answer → finalize`, with one branch
+  (nothing readable found: skip the model). `identify` takes the Principal from the session, never
+  from the message. Follow-ups are rewritten into standalone questions before the search. The
+  conversation is saved by LangGraph's Postgres checkpointer, and the reply streams to the browser
+  as Server-Sent Events: each step as it finishes, the answer token by token.
+- **Memory under the same rules.** A conversation is visible only to the person who started it: the
+  `chat_threads` policy, and a policy on LangGraph's own tables that shows a checkpoint only through
+  a thread you can see. Every saved answer records the documents it used; lose access to one, and
+  that answer is hidden from the model's prompt and from the conversation you see.
+- **Hybrid retrieval.** Meaning (pgvector) and words (Postgres full-text, the `tsv` column) ranked
+  separately, both inside the access filter, fused by rank (Reciprocal Rank Fusion).
+  `RETRIEVAL_STRATEGY=dense | keyword | hybrid`; `GET /search?strategy=` compares them. On the golden
+  set (Monday's documents, top 5): Hit@5 1.00 for meaning and hybrid, 0.96 for words alone; MRR 0.91
+  for meaning, 0.94 for hybrid; zero leaks for all three.
 - **Unchanged from Part 1:** the connectors, parsers, PII redaction, the chunker, the sync's decision
   ladder, blue/green indexes. Retrieval parity was checked: all 24 golden retrieval questions return
-  the same top 5, in the same order, with the same distances, as Part 1's ChromaDB.
+  the same top 5, in the same order, with the same distances, as Part 1's ChromaDB
+  (`RETRIEVAL_STRATEGY=dense`).
 
 ## Run it
 
@@ -71,6 +89,17 @@ alternate ticks. With a Drive tenant the citations are Drive links and any numbe
 5. **Audit log**: both changes, with before and after, and every search with the documents it returned.
 6. **Sync**: the worker's runs. Edit a file in Drive (or `fake_drive.py apply 2`) and watch the next
    tick plan `change`.
+7. **Chat**, as the intern: "How much can I spend per person on a team dinner?" ($90, the 2026
+   policy), then "And for a client dinner?" (the follow-up is rewritten into a full question; $150).
+   The steps light up, the answer streams in.
+8. Give the intern `hr`, start a new conversation, ask for the Senior Developer salary range (the
+   bands answer). Take `hr` away, ask "And for a junior?": no information, and the earlier answer is
+   now hidden, in the prompt and on screen. Open the conversation as `hr-partner`: 404.
+
+The demo starts from the state before class: `db.py seed` (the personas' groups, and Friday's
+register, where the bands are readable by `employees`), then `fake_drive.py reset` and `apply 1`,
+`2`, `3`, `5` (Monday's documents; not 4, which is HR fixing the bands: that is the admin's job in
+step 2), then `sync.py --apply`. In that order: a seed after the events puts Friday's register back.
 
 ## The security model, layer by layer
 
@@ -82,6 +111,8 @@ alternate ticks. With a Drive tenant the citations are Drive links and any numbe
 | What each process can do | three database roles with exact grants (`002_security.sql`) | a web bug corrupting the index; a worker bug leaking password hashes |
 | Who changed what | `audit_log`, written in the same transaction as the change | "who gave the intern access to the salary bands?" |
 | Requests from other sites | `SameSite=Lax` + the `X-Acme-Request` header on every write | another site making your browser post to Acme Desk |
+| Whose conversation | the `chat_threads` policy (tenant AND person) + a policy on LangGraph's checkpoint tables (`app/assistant/memory.py`) | reading or continuing someone else's thread, even with its id |
+| What the model remembers | every turn re-checks the documents earlier answers used (`app/assistant/nodes.py`) | an answer from before an access change leaking into the next one |
 
 ## What's new in this checkpoint
 
@@ -99,7 +130,12 @@ alternate ticks. With a Drive tenant the citations are Drive links and any numbe
 | `app/auth/` | `passwords.py` (argon2id), `sessions.py`, `service.py` (sign-in, the `Principal`), `deps.py` (guards, CSRF) |
 | `app/routers/auth.py`, `admin.py` | Sign in / out / me / password; people, groups, document access, audit |
 | `app/static/login.html`, `app.html`, `app.js` | The sign-in page and the workbench (admin tabs only for admins) |
-| `tests/` | 76 tests against a throwaway `acme_test` database: sync, access, tenants, roles, sign-in, the worker |
+| `app/db/migrations/004_chat.sql` | `chat_threads`: one row per conversation, visible only to its owner |
+| `app/assistant/` | The chat: `state.py` (what is saved, what is given), `nodes.py` (the four steps), `workflow.py` (the graph), `memory.py` (the Postgres checkpointer, under the thread rule), `model.py` (a LangChain chat model, so tokens stream), `threads.py` |
+| `app/routers/chat.py` | `/chat/threads`: list, start, read, ask (Server-Sent Events) |
+| `app/rag/store_pg.py`, `app/rag/retriever.py` | `keyword_search()` (full-text, inside the same filter) and `fuse()` (Reciprocal Rank Fusion) |
+| `app/prompts/chat_answer.py`, `standalone_question.py` | The chat's answer prompt; the follow-up rewrite |
+| `tests/` | 88 tests (and tonight's, skipped) against a throwaway `acme_test` database: sync, access, tenants, roles, sign-in, the worker, the chat, hybrid retrieval |
 
 Removed from Part 1, because they belonged to the RAG module's workbench: the compare, embed,
 visualize and store-inspect tabs, the naive ingest, and the in-process scheduler.
@@ -110,6 +146,24 @@ visualize and store-inspect tabs, the naive ingest, and the in-process scheduler
 docker compose up -d db
 pytest checkpoints/02-platform/tests -q     # builds acme_test from the migrations every run
 ```
+
+## Tonight
+
+About an hour, all offline: `SOURCE=local`, the local embedding model, no API key needed.
+
+1. **Replay today.** Two browsers (one private): the intern and the admin. Untick `employees` on the
+   salary bands, search again as the intern, give the intern `hr`, search again. Then read the Audit
+   log and find all four actions. Everyone, first.
+2. **Forget a conversation.** The `TODO (Lab exercise)` in `app/routers/chat.py`:
+   `DELETE /chat/threads/{id}` deletes the thread's checkpoints, then its row, and writes an audit row
+   `chat.forget`. The test is waiting in `tests/test_chat.py`: remove its `skip` line, see it fail,
+   make it pass. Hint: the checkpoints first. Why does the order matter? (`memory.py` has the answer.)
+3. **Prove the worker cannot read a conversation.** A new test in `tests/test_chat.py`: as
+   `acme_sync`, a `SELECT` from `chat_threads` must raise `InsufficientPrivilege`. It should pass
+   without touching any grant. Then explain why in one comment.
+4. **Stretch: meaning vs words.** `python evaluate.py --strategy all` (after `fake_drive.py apply all`
+   and a sync). Which question does keyword search miss, and why? Then search "Copilot" in the
+   Search tab with each strategy.
 
 ## Honest limits
 
@@ -127,3 +181,10 @@ pytest checkpoints/02-platform/tests -q     # builds acme_test from the migratio
   function too, like `tenants_of_user()`.
 - **The sync holds a transaction open while it embeds.** Fine for 88 chunks; for 50,000 you would
   embed first, outside the transaction, then write in one short one.
+- **A chat turn holds a database connection while the model writes.** The checkpointer needs a
+  connection that says who it acts for, for the whole turn: eight connections, eight concurrent
+  chats. Production would give it a bigger pool, or save once at the end of a turn.
+- **A hidden answer is hidden, not erased.** It stays in the checkpoint tables, readable by the
+  database owner. Forgetting a conversation is tonight's exercise; how long to keep one is a policy
+  decision, not a code one.
+- **The chat searches today's documents only.** `as_of` is on Search and Ask, not in the chat.

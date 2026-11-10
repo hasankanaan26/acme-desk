@@ -7,6 +7,7 @@
 //     and sends you to /login on a 401
 //   - there is no "Ask as": the server knows who you are from the
 //     session cookie, which this script cannot even read (HttpOnly)
+//   - the Chat tab reads a streamed reply (Server-Sent Events)
 // ============================================================
 
 let thresholds = { high: 0.8, low: 1.4, no_result: 1.6 };
@@ -115,6 +116,7 @@ async function loadHealth() {
         document.getElementById("status").append(
             chip("LLM ", health.llm_provider, " · " + health.model),
             chip("Store ", health.vector_store),
+            chip("Retrieval ", health.retrieval),
         );
     } catch (err) { /* the identity chips are enough */ }
 }
@@ -179,7 +181,13 @@ function badge(confidence) {
     return '<span class="badge badge-' + escapeHtml(confidence) + '">' + escapeHtml(confidence) + " confidence</span>";
 }
 
-function chunkRow(title, text, distance, link) {
+function foundBy(list) {
+    if (!list || !list.length) return "";
+    const label = list.length > 1 ? "meaning + words" : list[0];
+    return '<span class="found" title="Found by its ' + escapeHtml(list.join(" and its ")) + '">' + escapeHtml(label) + "</span>";
+}
+
+function chunkRow(title, text, distance, link, found) {
     let distanceHtml = "";
     if (distance !== undefined && distance !== null) {
         distanceHtml = distanceBar(distance, thresholds.no_result * 1.25, distanceLevel(distance)) +
@@ -187,12 +195,160 @@ function chunkRow(title, text, distance, link) {
     }
     const open = link && /^https?:/.test(link)
         ? '<p class="meta chunk-link"><a href="' + escapeHtml(link) + '" target="_blank" rel="noopener">Open the source</a></p>' : "";
-    return '<details class="chunk"><summary><span class="name">' + escapeHtml(title) + "</span>" +
+    return '<details class="chunk"><summary><span class="name">' + escapeHtml(title) + "</span>" + foundBy(found) +
         distanceHtml + "</summary><pre>" + escapeHtml(text) + "</pre>" + open + "</details>";
 }
 
 function sourcesList(sources) {
-    return sources.map((src, i) => chunkRow("#" + (i + 1) + "  " + provenance(src), src.text, src.distance, src.source_url)).join("");
+    return sources.map((src, i) => chunkRow("#" + (i + 1) + "  " + provenance(src), src.text, src.distance, src.source_url, src.found_by)).join("");
+}
+
+// ---------- Chat: /chat/threads, streamed as Server-Sent Events ----------
+// The reply arrives as a stream of small messages:
+//   event: step   a node finished (identify, retrieve, answer, finalize)
+//   event: token  a few characters of the answer
+//   event: done   the final answer and its sources
+// EventSource can only GET, and asking is a POST, so we read the stream
+// ourselves: fetch(), then a reader, split on blank lines.
+
+let currentThread = null;
+
+async function loadThreads() {
+    try {
+        const list = await api("/chat/threads");
+        const ul = document.getElementById("threadList");
+        ul.innerHTML = list.length ? list.map(t => '<li data-thread="' + escapeHtml(t.id) + '"' +
+            (t.id === currentThread ? ' class="active"' : "") + ' title="' + escapeHtml(t.title) + '">' + escapeHtml(t.title) + "</li>").join("")
+            : '<li class="muted">No conversations yet</li>';
+        if (!currentThread) renderLog([]);
+    } catch (err) {
+        setOutput("chatLog", errorBanner(err));
+    }
+}
+
+async function openThread(id) {
+    currentThread = id;
+    try {
+        const thread = await api("/chat/threads/" + id);
+        renderLog(thread.messages);
+        loadThreads();
+    } catch (err) {
+        setOutput("chatLog", errorBanner(err));
+    }
+}
+
+function newChat() {
+    currentThread = null;
+    renderLog([]);
+    loadThreads();
+    document.getElementById("chatInput").focus();
+}
+
+function renderLog(messages) {
+    const log = document.getElementById("chatLog");
+    if (!messages.length) {
+        log.innerHTML = '<p class="chat-empty">A new conversation. Ask anything about Acme&rsquo;s documents; follow-ups work.</p>';
+        return;
+    }
+    log.innerHTML = "";
+    for (const m of messages) {
+        log.append(m.role === "user" ? userBubble(m.text) : assistantBubble(m));
+    }
+}
+
+function userBubble(text) {
+    const div = document.createElement("div");
+    div.className = "msg msg-user";
+    div.textContent = text;
+    return div;
+}
+
+function assistantBubble(m) {
+    const div = document.createElement("div");
+    div.className = "msg msg-assistant" + (m.hidden ? " hidden" : "");
+    div.innerHTML = '<div class="steps"></div><div class="answer"></div><div class="sources"></div>';
+    div.querySelector(".answer").textContent = m.text || "";
+    if (m.sources) fillSources(div, m);
+    return div;
+}
+
+function fillSources(bubble, m) {
+    const box = bubble.querySelector(".sources");
+    if (!m.sources || !m.sources.length) { box.innerHTML = ""; return; }
+    box.innerHTML = "<details><summary>" + m.sources.length + " sources" +
+        (m.confidence ? " · " + escapeHtml(m.confidence) + " confidence" : "") + "</summary>" + sourcesList(m.sources) + "</details>";
+}
+
+function showStep(bubble, step) {
+    let detail = "";
+    if (step.node === "identify") detail = " as " + step.user;
+    if (step.node === "retrieve") detail = " · " + step.chunks + " chunks" +
+        (step.hidden_documents ? " · " + step.hidden_documents + " doc(s) no longer yours" : "");
+    if (step.node === "answer" && step.outcome !== "answered") detail = " · " + step.outcome;
+    const span = document.createElement("span");
+    span.className = "step done";
+    span.innerHTML = "<b>" + escapeHtml(step.node) + "</b>" + escapeHtml(detail);
+    if (step.node === "retrieve" && step.search_query) {
+        span.title = "Searched for: " + step.search_query + "\n" + (step.documents || []).join("\n");
+    }
+    bubble.querySelector(".steps").append(span);
+}
+
+async function* readEvents(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+        const { value: bytes, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(bytes, { stream: true });
+        let cut;
+        while ((cut = buffer.indexOf("\n\n")) >= 0) {
+            const block = buffer.slice(0, cut);
+            buffer = buffer.slice(cut + 2);
+            const event = (block.match(/^event: (.*)$/m) || [])[1];
+            const data = (block.match(/^data: (.*)$/m) || [])[1];
+            if (event && data) yield { event, data: JSON.parse(data) };
+        }
+    }
+}
+
+async function sendChat(event) {
+    event.preventDefault();
+    const input = document.getElementById("chatInput");
+    const question = input.value.trim();
+    if (!question) return;
+    const button = event.target.querySelector("button");
+    button.disabled = true;
+    input.value = "";
+    const log = document.getElementById("chatLog");
+    if (log.querySelector(".chat-empty")) log.innerHTML = "";
+    try {
+        if (!currentThread) currentThread = (await api("/chat/threads", { method: "POST" })).id;
+        log.append(userBubble(question));
+        const bubble = assistantBubble({ text: "" });
+        const answer = bubble.querySelector(".answer");
+        answer.classList.add("cursor");
+        log.append(bubble);
+        const response = await fetch("/chat/threads/" + currentThread + "/messages", {
+            method: "POST", headers: { "Content-Type": "application/json", "X-Acme-Request": "1" },
+            body: JSON.stringify({ message: question }),
+        });
+        if (response.status === 401) { location.href = "/login"; return; }
+        if (!response.ok) throw new Error(response.status + ": " + await response.text());
+        for await (const { event: name, data } of readEvents(response)) {
+            if (name === "step") showStep(bubble, data);
+            if (name === "token") answer.textContent += data.text;
+            if (name === "done") { answer.textContent = data.answer; fillSources(bubble, data); }
+            if (name === "error") throw new Error(data.message + " (request " + data.request_id + ")");
+        }
+        loadThreads();
+    } catch (err) {
+        log.insertAdjacentHTML("beforeend", errorBanner(err));
+    } finally {
+        button.disabled = false;
+        document.querySelectorAll("#chatLog .cursor").forEach(el => el.classList.remove("cursor"));
+    }
 }
 
 // ---------- Ask: POST /query ----------
@@ -236,16 +392,17 @@ function renderRagAnswer(data) {
 
 async function submitSearch(event) {
     event.preventDefault();
-    const url = withParams("/search", { q: value("searchQuery"), top_k: value("searchTopK"), as_of: value("asOf") });
+    const url = withParams("/search", { q: value("searchQuery"), top_k: value("searchTopK"), as_of: value("asOf"),
+        strategy: value("searchStrategy") });
     await runWithBusy(event.target, "searchOutput", "Searching…", async () => {
         const data = await api(url);
         const asked = "as " + escapeHtml(data.user) + " (" + escapeHtml(data.groups.join(", ") || "no groups") + ")" +
-            (data.as_of ? ", as of " + escapeHtml(data.as_of) : ", today");
+            (data.as_of ? ", as of " + escapeHtml(data.as_of) : ", today") + ", ranked " + escapeHtml(data.strategy);
         if (!data.results.length) {
             setOutput("searchOutput", '<div class="banner banner-none">Nothing you may read matches, ' + asked + ".</div>");
             return;
         }
-        const rows = data.results.map((r, i) => chunkRow("#" + (i + 1) + "  " + provenance(r), r.text, r.distance, r.source_url)).join("");
+        const rows = data.results.map((r, i) => chunkRow("#" + (i + 1) + "  " + provenance(r), r.text, r.distance, r.source_url, r.found_by)).join("");
         setOutput("searchOutput", '<div class="card"><h3>' + data.total_results + " closest chunks " + asked + "</h3>" + rows +
             '<p class="meta">Green ≤ ' + thresholds.high + ", amber ≤ " + thresholds.low + ", red ≤ " + thresholds.no_result +
             ", grey = no result.</p></div>");
@@ -411,26 +568,26 @@ async function clickPeople(event) {
     const id = row.dataset.user;
     const name = row.querySelector("b").textContent;
     const message = text => setOutput("peopleMessage", text);
+    let done = null;   // shown AFTER the table is redrawn: the redraw replaces #peopleMessage
     try {
         if (button.dataset.act === "save") {
             const body = { role: row.querySelector('select[name="role"]').value, groups: checked(row, "group") };
             const active = row.querySelector('input[name="active"]');
             if (!active.disabled) body.is_active = active.checked;
             const u = await api("/admin/users/" + id, { method: "PATCH", json: body });
-            message(okBanner(name + " saved: " + u.role + ", groups " + (u.groups.join(", ") || "none") + ". Live on their next question."));
+            done = name + " saved: " + u.role + ", groups " + (u.groups.join(", ") || "none") + ". Live on their next question.";
         } else if (button.dataset.act === "password") {
             const pw = prompt("New temporary password for " + name + " (at least 12 characters). Their sessions end.");
             if (!pw) return;
             await api("/admin/users/" + id, { method: "PATCH", json: { password: pw } });
-            message(okBanner("Password reset for " + name + ". They are signed out everywhere."));
+            done = "Password reset for " + name + ". They are signed out everywhere.";
         } else if (button.dataset.act === "remove") {
             if (!confirm("Remove " + name + " from this tenant? Their sessions here end now.")) return;
             await api("/admin/users/" + id, { method: "DELETE" });
-            await loadPeople();
-            message(okBanner(name + " removed."));
-            return;
+            done = name + " removed.";
         }
         await loadPeople();
+        if (done) message(okBanner(done));
     } catch (err) {
         message(errorBanner(err));
     }
@@ -517,12 +674,12 @@ async function loadAudit(event) {
 
 // ---------- Tabs ----------
 
-const LOADERS = { documents: loadDocuments, sync: refreshSync, people: loadPeople, access: loadAccess, audit: loadAudit };
+const LOADERS = { chat: loadThreads, documents: loadDocuments, sync: refreshSync, people: loadPeople, access: loadAccess, audit: loadAudit };
 
 function showTab() {
-    let name = location.hash.slice(1) || "query";
+    let name = location.hash.slice(1) || "chat";
     const link = document.querySelector('#tabs a[data-tab="' + name + '"]');
-    if (!link || link.hidden) name = "query";
+    if (!link || link.hidden) name = "chat";
     document.querySelectorAll("section").forEach(s => s.classList.toggle("active", s.dataset.panel === name));
     document.querySelectorAll("#tabs a").forEach(a => a.classList.toggle("active", a.dataset.tab === name));
     if (LOADERS[name]) LOADERS[name]();
@@ -548,6 +705,12 @@ setInterval(() => {
 
 // ---------- Start ----------
 
+document.getElementById("chatForm").addEventListener("submit", sendChat);
+document.getElementById("newChat").addEventListener("click", newChat);
+document.getElementById("threadList").addEventListener("click", e => {
+    const li = e.target.closest("li[data-thread]");
+    if (li) openThread(li.dataset.thread);
+});
 document.getElementById("queryForm").addEventListener("submit", submitQuery);
 document.getElementById("searchForm").addEventListener("submit", submitSearch);
 document.getElementById("passwordForm").addEventListener("submit", submitPassword);

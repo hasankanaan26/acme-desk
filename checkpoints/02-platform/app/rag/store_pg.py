@@ -10,6 +10,8 @@
 #                          without re-embedding a single word
 #   index_state()          per document: content hash, eTag, labels
 #   search(...)            similarity search INSIDE the access filter
+#   keyword_search(...)    full-text search, inside the same filter
+#                          (new with the chat block: hybrid retrieval)
 #
 # "collection" is now an index name in search_indexes; None means the
 # tenant's live index. Every call runs in the caller's transaction
@@ -155,19 +157,67 @@ def search(query_embedding: list[float], top_k: int = 3, access: Access | None =
     rows = conn.execute(query, {"q": _vector(query_embedding), "index": name, "day": access.as_of,
                                 "doc_type": access.doc_type, "groups": list(access.group_ids),
                                 "k": top_k}).fetchall()
-    items = []
-    for r in sorted(rows, key=lambda r: r["distance"]):
-        meta = r["metadata"]
-        items.append({
-            **meta,
-            "id": r["id"],
-            "text": r["text"],
-            "source": meta.get("source", ""),
-            "chunk_index": meta.get("chunk_index", 0),
-            "doc_type": meta.get("doc_type", ""),
-            "distance": float(r["distance"]),
-        })
-    return items
+    return [_item(r) for r in sorted(rows, key=lambda r: r["distance"])]
+
+
+# Purpose:
+# Search by WORDS: Postgres full-text search on the same chunks, inside
+# the same access filter as search(). Meaning-search can rank a passage
+# low when the question names an exact thing (a product, a code, an
+# acronym); this finds every chunk that shares words with the question.
+#
+# The question becomes an OR of its words, stemmed and without stop
+# words ("How many vacation days can I roll over?" -> vacat | day |
+# roll). ts_rank_cd ranks chunks that match more of them, closer
+# together, higher. `tsv` is a generated column with a GIN index
+# (001_schema.sql), so this is an index lookup, not a scan.
+#
+# Each row also carries its vector distance to the question, so a
+# chunk found only by its words still has a confidence.
+def keyword_search(query_text: str, query_embedding: list[float], top_k: int = 3, access: Access | None = None,
+                   collection: str | None = None) -> list[dict]:
+    name = _index(collection)
+    if not name or access is None or not access.group_ids:
+        return []  # no index, or nobody: fail closed
+    dims = len(query_embedding)
+    when = (sql.SQL("c.effective_from <= %(day)s AND c.effective_to > %(day)s") if access.as_of
+            else sql.SQL("c.status = 'current'"))
+    query = sql.SQL("""
+        WITH words AS (
+            SELECT to_tsquery('simple', string_agg(quote_literal(w), ' | ')) AS q
+            FROM unnest(tsvector_to_array(to_tsvector('english', %(text)s))) AS w)
+        SELECT c.id, c.text, c.metadata,
+               2 * (c.embedding::vector({d}) <=> %(q)s::vector({d})) AS distance,
+               ts_rank_cd(c.tsv, words.q, 1) AS keyword_rank
+        FROM chunks c, words
+        WHERE words.q IS NOT NULL
+          AND c.tsv @@ words.q
+          AND c.index_name = %(index)s
+          AND c.dims = {d}
+          AND {when}
+          AND (%(doc_type)s::text IS NULL OR c.doc_type = %(doc_type)s)
+          AND EXISTS (SELECT 1 FROM document_acl a
+                      WHERE a.tenant_id = c.tenant_id AND a.doc_id = c.doc_id
+                        AND a.group_id = ANY(%(groups)s::uuid[]))
+        ORDER BY keyword_rank DESC, c.id
+        LIMIT %(k)s""").format(d=sql.Literal(dims), when=when)
+    rows = db.current().execute(query, {"text": query_text, "q": _vector(query_embedding), "index": name,
+                                        "day": access.as_of, "doc_type": access.doc_type,
+                                        "groups": list(access.group_ids), "k": top_k}).fetchall()
+    return [_item(r) for r in rows]
+
+
+def _item(r) -> dict:
+    meta = r["metadata"]
+    return {
+        **meta,
+        "id": r["id"],
+        "text": r["text"],
+        "source": meta.get("source", ""),
+        "chunk_index": meta.get("chunk_index", 0),
+        "doc_type": meta.get("doc_type", ""),
+        "distance": float(r["distance"]),
+    }
 
 
 def _vector(values):

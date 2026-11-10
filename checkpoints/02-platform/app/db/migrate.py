@@ -54,6 +54,12 @@ def migrate() -> list[str]:
                 conn.execute(path.read_text(encoding="utf-8"))
                 conn.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (path.stem,))
             ran.append(path.stem)
+        # The chat's memory: LangGraph creates its own tables (and keeps
+        # its own migration list), then they get the thread rule. Not a
+        # .sql file because the table definitions are LangGraph's.
+        from app.assistant import memory
+
+        memory.setup(conn)
     return ran
 
 

@@ -86,6 +86,40 @@ def tx(role: str, tenant_id: str | None = None, user_id: str | None = None) -> I
                 _current.reset(token)
 
 
+def _forget_who(conn: psycopg.Connection) -> None:
+    """Pool reset: a returned connection acts for nobody."""
+    conn.execute("SELECT set_config('app.tenant_id', '', false), set_config('app.user_id', '', false)")
+
+
+def _session_pool(role: str) -> ConnectionPool:
+    key = role + "/session"
+    if key not in _pools:
+        _pools[key] = ConnectionPool(
+            URLS[role], min_size=0, max_size=8, open=True, name=f"acme-{role}-session",
+            kwargs={"row_factory": dict_row, "autocommit": True, "prepare_threshold": 0},
+            reset=_forget_who,
+        )
+    return _pools[key]
+
+
+# Purpose:
+# A connection of its own, OUTSIDE any transaction, acting for one
+# tenant and one person until it goes back to the pool. For LangGraph's
+# checkpointer, which commits each of its writes by itself, so SET
+# LOCAL (one transaction) would be forgotten after its first statement.
+# The settings are session-wide here, and the pool's reset wipes them
+# before anyone else borrows the connection.
+@contextmanager
+def session(role: str, tenant_id: str, user_id: str) -> Iterator[psycopg.Connection]:
+    with _session_pool(role).connection() as conn:
+        conn.execute("SELECT set_config('app.tenant_id', %s, false), set_config('app.user_id', %s, false)",
+                      (str(tenant_id), str(user_id)))
+        try:
+            yield conn
+        finally:
+            _forget_who(conn)
+
+
 def current() -> psycopg.Connection:
     conn = _current.get()
     if conn is None:

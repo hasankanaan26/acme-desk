@@ -7,6 +7,7 @@ safety (leaks, stale chunks, ghosts, PII, empty chunks).
 
     python evaluate.py              # the live index
     python evaluate.py --details    # plus every question and what came back
+    python evaluate.py --strategy all   # dense vs keyword vs hybrid, side by side
 
 Part 2: each golden question is asked as its persona's real account
 (intern -> intern@acme.test), with that person's groups from Postgres,
@@ -26,7 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app import db  # noqa: E402
-from app.config import REPO_ROOT, RUNS_DIR, SOURCE_DIR  # noqa: E402
+from app.config import REPO_ROOT, RETRIEVAL_STRATEGIES, RETRIEVAL_STRATEGY, RUNS_DIR, SOURCE_DIR  # noqa: E402
 from app.db.impersonate import as_person  # noqa: E402
 from app.evals.judge import build_truth, score_question, summarize  # noqa: E402
 from app.ingest.registry import current_tenant_row, fetch_register  # noqa: E402
@@ -47,12 +48,12 @@ LABELS = {
 }
 
 
-def run(questions: list[dict], top_k: int, truth: dict) -> list[dict]:
+def run(questions: list[dict], top_k: int, truth: dict, strategy: str | None = None) -> list[dict]:
     rows, people = [], {}
     for q in questions:
         person = people.get(q["user"]) or people.setdefault(q["user"], as_person(q["user"], "evaluate.py"))
         with db.tx("app", person.tenant_id, person.user_id):
-            chunks = retrieve(q["question"], person.group_ids, top_k=top_k, as_of=q.get("as_of"))
+            chunks = retrieve(q["question"], person.group_ids, top_k=top_k, as_of=q.get("as_of"), strategy=strategy)
         rows.append(score_question(q, chunks, truth, person.group_names, naive=False))
     return rows
 
@@ -60,6 +61,8 @@ def run(questions: list[dict], top_k: int, truth: dict) -> list[dict]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--details", action="store_true")
+    parser.add_argument("--strategy", choices=[*RETRIEVAL_STRATEGIES, "all"], default=RETRIEVAL_STRATEGY,
+                        help="how the search ranks (default: RETRIEVAL_STRATEGY in .env); all = one column each")
     args = parser.parse_args()
 
     applied = SOURCE_DIR / ".applied_events.json"
@@ -79,12 +82,13 @@ def main() -> None:
     if not live:
         print("No live index. Run: python sync.py --apply")
         return
-    rows = run(questions, top_k, build_truth(live_register))
-    results = {"sync": {"summary": summarize(rows), "rows": rows}}
-
-    if not results:
-        return
-    names = {"naive": "one-shot /ingest", "sync": "the sync job"}
+    truth = build_truth(live_register)
+    strategies = RETRIEVAL_STRATEGIES if args.strategy == "all" else (args.strategy,)
+    results = {}
+    for strategy in strategies:
+        rows = run(questions, top_k, truth, strategy)
+        results[strategy] = {"summary": summarize(rows), "rows": rows}
+    names = {"dense": "by meaning", "keyword": "by words", "hybrid": "hybrid"}
     header = f"{'':48}" + "".join(f"{names[i]:>22}" for i in results)
     print(header)
     first = next(iter(results.values()))["summary"]

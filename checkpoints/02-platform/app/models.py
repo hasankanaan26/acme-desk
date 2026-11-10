@@ -28,6 +28,7 @@ class SearchResult(Provenance):
     source: str
     chunk_index: int
     distance: float
+    found_by: list[str] = []          # "meaning" (pgvector), "words" (full-text), or both
 
 
 class SearchResponse(BaseModel):
@@ -36,6 +37,7 @@ class SearchResponse(BaseModel):
     user: str
     groups: list[str]
     as_of: str | None = None
+    strategy: str = "dense"
     results: list[SearchResult]
     total_results: int
 

@@ -368,3 +368,30 @@ td.detail { font-family: var(--mono); font-size: 0.8em; color: var(--muted); max
 #addUserForm .group-picker { grid-column: 1 / -1; }
 .card ul { padding-left: 20px; margin-top: 6px; }
 .card h4 { margin-top: 12px; font-size: 0.9em; }
+
+/* ---- Part 2: the chat ---- */
+.chat { display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }
+.chat-threads { display: flex; flex-direction: column; gap: 8px; }
+.chat-threads ul { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.chat-threads li { padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 0.88em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-threads li:hover { background: var(--surface-2); }
+.chat-threads li.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.chat-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.chat-log { display: flex; flex-direction: column; gap: 12px; min-height: 120px; }
+.chat-empty { color: var(--muted); font-size: 0.9em; padding: 20px 0; }
+.msg { max-width: 92%; border-radius: var(--radius); padding: 10px 14px; line-height: 1.55; }
+.msg-user { align-self: flex-end; background: var(--accent); color: var(--accent-text); white-space: pre-wrap; }
+.msg-assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); width: 92%; }
+.msg-assistant .answer { white-space: pre-wrap; }
+.msg-assistant.hidden .answer { color: var(--muted); font-style: italic; }
+.msg .steps { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.step { font-size: 0.75em; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.step.done { background: var(--high-bg); color: var(--high-fg); }
+.step b { font-weight: 600; }
+.msg .sources { margin-top: 8px; }
+.msg .sources summary { cursor: pointer; font-size: 0.8em; color: var(--muted); }
+.found { font-size: 0.72em; padding: 1px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin-left: 6px; white-space: nowrap; }
+.cursor::after { content: "▍"; color: var(--muted); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+select.auto { width: auto; }
+@media (max-width: 800px) { .chat { grid-template-columns: 1fr; } }
