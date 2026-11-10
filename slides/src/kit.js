@@ -74,7 +74,11 @@ class Deck {
           if (o.shadow) shape.shadow = { type: "outer", color: "000000", opacity: 0.12, blur: 6, offset: 2, angle: 90 };
           slide.addShape(type, shape);
         } else if (el.kind === "line") {
-          slide.addShape(pres.ShapeType.line, { x: o.x, y: o.y, w: o.w, h: o.h || 0, objectName: o.objectName,
+          // OOXML extents must be >= 0: PowerPoint refuses the whole file on a negative width or height.
+          // An up- or left-pointing line becomes a positive box, flipped, so the arrowhead stays at (x+w, y+h).
+          const w = o.w || 0, h = o.h || 0;
+          slide.addShape(pres.ShapeType.line, { x: w < 0 ? o.x + w : o.x, y: h < 0 ? o.y + h : o.y,
+            w: Math.abs(w), h: Math.abs(h), flipH: w < 0, flipV: h < 0, objectName: o.objectName,
             line: { color: o.color, width: o.width || 1, dashType: o.dash || "solid",
               endArrowType: o.arrow ? "triangle" : undefined } });
         } else if (el.kind === "image") {

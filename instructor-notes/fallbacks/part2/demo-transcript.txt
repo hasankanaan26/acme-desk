@@ -1,0 +1,64 @@
+## Q1. Sign-in
+
+POST /auth/login  intern@acme.test, wrong password  -> 401 {'detail': 'Email or password is wrong.'}
+POST /auth/login  nobody@acme.test (no such account) -> 401 {'detail': 'Email or password is wrong.'}   (the same message)
+POST /auth/login  intern@acme.test, right password  -> 200
+  Set-Cookie: acme_session=<random token>; HttpOnly; Max-Age=604800; Path=/; SameSite=lax
+GET /auth/me -> {"email": "intern@acme.test", "display_name": "Engineering intern", "role": "member", "tenant": {"slug": "acme", "name": "Acme Corp"}, "groups": ["employees", "engineering"]}
+GET /search?q=salary range senior developer&user=hr-partner -> user=intern@acme.test groups=['employees', 'engineering']   (?user= is ignored)
+GET /search with no cookie -> 401 {'detail': 'Sign in first.'}
+
+## Q2. The access fix, live
+
+intern  /search 'salary range senior developer': ['HR-SALARY-BANDS-2026 0.68', 'PEOPLE-DIRECTORY 1.22', 'HR-SALARY-BANDS-2026 1.14', 'HR-SALARY-BANDS-2026 1.05', 'ENG-STACK 1.40']
+admin   PATCH /admin/documents/HR-SALARY-BANDS-2026 allowed_groups=[hr, managers] -> 200 {'doc_id': 'HR-SALARY-BANDS-2026', 'allowed_groups': ['hr', 'managers'], 'status': 'current', 'access_change': 'live now', 'status_change': None}
+intern  /search again: ['PEOPLE-DIRECTORY 1.22', 'ENG-STACK 1.40', 'PEOPLE-DIRECTORY 1.33', 'HR-ONBOARDING 1.44', 'PEOPLE-DIRECTORY 1.31']
+admin   intern's groups += hr;  intern /search: ['HR-SALARY-BANDS-2026 0.68', 'PEOPLE-DIRECTORY 1.22', 'HR-SALARY-BANDS-2026 1.14', 'HR-SALARY-BANDS-2026 1.05', 'ENG-STACK 1.40']
+admin   intern's groups -= hr;  intern /search: ['PEOPLE-DIRECTORY 1.22', 'ENG-STACK 1.40', 'PEOPLE-DIRECTORY 1.33', 'HR-ONBOARDING 1.44', 'PEOPLE-DIRECTORY 1.31']
+
+audit (newest first):
+  23:15:19  intern@acme.test     search                                          {"as_of": null, "doc_ids": ["ENG-STACK", "HR-ONBOARDING", "PEOPLE-DIRECTORY"], "strategy": "hybrid"}
+  23:15:19  admin@acme.test      admin.user.update        intern@acme.test       {"after": {"role": "member", "groups": ["employees", "engineering"], "is_active": true, "display_name": "Engin
+  23:15:18  intern@acme.test     search                                          {"as_of": null, "doc_ids": ["ENG-STACK", "HR-SALARY-BANDS-2026", "PEOPLE-DIRECTORY"], "strategy": "hybrid"}
+  23:15:18  admin@acme.test      admin.user.update        intern@acme.test       {"after": {"role": "member", "groups": ["employees", "engineering", "hr"], "is_active": true, "display_name": 
+  23:15:17  intern@acme.test     search                                          {"as_of": null, "doc_ids": ["ENG-STACK", "HR-ONBOARDING", "PEOPLE-DIRECTORY"], "strategy": "hybrid"}
+  23:15:17  admin@acme.test      admin.document.update    HR-SALARY-BANDS-2026   {"status": {"after": "current", "before": "current"}, "allowed_groups": {"after": ["hr", "managers"], "before"
+  23:15:16  intern@acme.test     search                                          {"as_of": null, "doc_ids": ["ENG-STACK", "HR-SALARY-BANDS-2026", "PEOPLE-DIRECTORY"], "strategy": "hybrid"}
+  23:15:16  admin@acme.test      auth.login                                      {}
+
+## Q3. The chat
+
+> How much can I spend per person on a team dinner?   (raw stream in chat-raw-stream.txt)
+
+> And for a client dinner?   (4.7s, 32 tokens)
+  steps: identify -> retrieve -> answer -> finalize
+  searched for: 'How much can I spend per person on a client dinner?'; 5 chunks from ['Company FAQ', 'Expense Policy (2026 edition)', 'Remote Work Guidelines']
+  answered: For client entertainment, including dinners, you can spend up to $150 per person with prior manager approval, as stated in the Expense Policy (2026 edition).
+
+[admin gives the intern hr]
+
+> What is the salary range for a Senior Developer?   (2.6s, 42 tokens)
+  steps: identify -> retrieve -> answer -> finalize
+  searched for: 'What is the salary range for a Senior Developer?'; 5 chunks from ['Engineering Salary Bands (2026)', 'Team Directory']
+  answered: The salary range for a Senior Developer (L3) is $120,000 to $155,000 per year. This information is from the Engineering Salary Bands (2026) document, section Individual Contributors.
+
+[admin takes hr away again]
+
+> And for a junior?   (3.7s, 12 tokens)
+  steps: identify -> retrieve -> answer -> finalize
+  searched for: 'What is the salary range for a Junior Developer?'; 5 chunks from ['New Employee Onboarding Checklist', 'Team Directory', 'Technology Stack']; 1 earlier document(s) no longer readable
+  answered: I don't have that information in the documents you can access.
+
+GET /chat/threads/{id} (the intern reopens the conversation):
+  user      What is the salary range for a Senior Developer?
+  assistant (hidden) (An earlier answer is hidden here: it used a document you can no longer read.)
+  user      And for a junior?
+  assistant I don't have that information in the documents you can access.
+
+hr-partner GET the intern's thread -> 404
+
+## Hybrid: "Copilot"
+
+  dense    ENG-HANDBOOK (meaning), ENG-ONBOARDING-GUIDE (meaning), PEOPLE-DIRECTORY (meaning), HR-ONBOARDING (meaning), PEOPLE-DIRECTORY (meaning)
+  keyword  FIN-EXP-2026 (words)
+  hybrid   ENG-HANDBOOK (meaning), FIN-EXP-2026 (words), ENG-ONBOARDING-GUIDE (meaning), PEOPLE-DIRECTORY (meaning), HR-ONBOARDING (meaning)

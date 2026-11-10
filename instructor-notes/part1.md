@@ -52,8 +52,8 @@ SYNC_INTERVAL_SECONDS=0             # off for the opening; 60 from block 2
       `http://localhost:8000/health` shows `"live_index": null`, `"source": "drive"`.
 - [ ] Browser tabs: the Drive folder, the Leave Policy Doc, `/ui#sync`, this file.
 - [ ] `instructor-notes/fallbacks/part1/` open in the editor.
-- [ ] The live slice prepared: in `app/ingest/scheduler.py`, cut the bodies of `_loop()` and `tick()`
-      down to `...`; the complete module is `fallbacks/part1/scheduler_complete.py`.
+- [ ] Editor and terminal zoomed to 18pt+. `connector.py`, `sync.py` and `scheduler.py` open in tabs.
+      Nothing is typed live today: the code is read, not written (see "Introducing the code" below).
 - [ ] Do not press Sync, Run now, or start the API with the timer on before class: the opening dry run
       must say "add 18", not "unchanged".
 
@@ -61,46 +61,48 @@ SYNC_INTERVAL_SECONDS=0             # off for the opening; 60 from block 2
 
 ## 3. Run of show (2 hours)
 
-| Block | Min | Content | Live | Expect |
-|---|---|---|---|---|
-| Opening | 10 | The closeout (above). The arc on one slide. "Same story as Friday, real source." | `python checkpoints/01-source/drive_admin.py tree` | 7 folders, 20 files, each with `md5 …` or `v7 (native, exported)`. Fallback `tree.txt` |
-| 1 Connect | 30 | The three questions (slide). `app/ingest/connector.py`: the `Connector` protocol, the SharePoint vs Drive table in the header, `make_connector()`. `app/ingest/connector_drive.py`: `_children` (one `files.list` per folder), `_identity` (md5 or version), `fetch` (download or export). Then the first sync. | `python checkpoints/01-source/sync.py --source drive`, then `--source drive --apply`. In `/ui`: "How many unused vacation days can I roll over?" | Dry run: add 18, quarantine 1, skip 1; 88 chunks, ~6,174 tokens (*rehearsed*). Apply: 88 chunks, smoke check ok, LIVE, 15 to 25 s with Azure. The answer: 5 days. Fallback `first-sync.txt` |
-| 2 Sync on a schedule | 30 | Why a job, not a button (slide: cron, worker, webhook). Live-code `_loop()` and `tick()`. Restart the API with the timer on. The Scheduler card counts down. Now the edit and the deletion, in Drive, as the owner. | `SYNC_INTERVAL_SECONDS=60 python run_checkpoint.py 01-source`. In Drive: edit the Leave Policy Doc, carry-over 5 → 10; trash `leadership/q3-planning-notes.md`. Wait for the tick or press Run now. Ask the carry-over question again. Ask "how many backend developers are we hiring?" as `finance-lead`. | Tick: change 1 (HR-LEAVE), remove 1 (LEAD-Q3-NOTES), quarantine 1, skip 1, unchanged 16. Carry-over: 10 days. Hiring: no information. Fallbacks: `POST /sync/now`; local mode `fake_drive.py apply 2` then `apply 3`; `monday-plan.json` + screenshots |
-| Break | 10 | | | |
-| 3 Signals | 30 | Two fingerprints (slide). `GET /sync/explain?doc_id=HR-LEAVE` in the Sync tab: both eTags, both hashes, the chunk diff. A `touch` for real: upload a new version of the wiki page with a changed footer (`shared/data/events/files/wiki-vector-database.html`, Manage versions → Upload new version). `drive_admin.py permissions hr/salary-bands-2026.md`: it returns 403, because the sync is a Viewer and Drive shows sharing only to identities that could change it. That refusal is the point (least privilege vs. reading permissions; fallback `permissions.txt`). One slide each: the Changes API as Graph's `/delta`, push notifications, the local fallback and the tests. | the explain panel; `drive_admin.py token`, edit, `drive_admin.py changes <token>` | Explain: eTag index ≠ source, hash index ≠ source, the diff shows `5` → `10`. The footer upload: `touch`, no embedding. `changes`: one record for the Doc. Fallbacks: `explain-hr-leave.json`, `changes.txt` |
-| Wrap | 10 | Tonight's four exercises (README). Wednesday: a face on this index: chat, identity from a token, hybrid retrieval. | | |
+The deck is built around three questions, and it does not assume Friday was finished. Every idea gets
+a picture, then at most ~12 lines of code, then something running. Each live slide is followed by a
+"what you should see" slide: if a demo fails, move to that slide and keep teaching.
 
-### The live slice
+The session is online and has no questions to the room, no quizzes and no polls: every former "ask"
+is now said by the instructor or shown as a worked example. Read the chat at the end of each block
+and at the break.
 
-`_loop()` and `tick()` in `app/ingest/scheduler.py`, about 20 lines. Type them in this order and say
-what each line is for:
+| Block | Slides | Min | Ends by | Live | Expect |
+|---|---|---|---|---|---|
+| Opening | 1–5 | 10 | 0:10 | none | the problem (5 vs 10 days), the pipeline recap, the arc, the three questions |
+| Q1 Read | 6–11 | 25 | 0:35 | `drive_admin.py tree`, `sync.py --source drive`, `--apply`, the carry-over question | add 18, quarantine 1, skip 1; 88 chunks; 5 days. Fallback `first-sync.txt` |
+| Q2 Notice | 12–17 | 30 | 1:05 | none: the lazy fix, label-then-text-then-pay, the ladder, six worked cases, `build_plan()` read on screen | rows 1 and 2 of the worked cases (change, remove) are Monday's two edits |
+| Break | 18 | 10 | 1:15 | start the API with `SYNC_INTERVAL_SECONDS=60` now, so it is warm | the Scheduler card counts down |
+| Q3 Repeat | 19–24 | 30 | 1:45 | say what should happen, then edit the Doc 5 → 10, trash the Q3 notes, wait for the tick (or Run now), ask the assistant again | change 1, remove 1, quarantine 1, skip 1, unchanged 16; 10 days; hiring: no information. Plan B: `fake_drive.py apply 2`, `apply 3` |
+| Wrap | 25–28 | 10 | 1:55 | none | three ideas, limits, tonight, Wednesday |
 
-```python
-def tick() -> dict:
-    started = time.perf_counter()
-    try:
-        report = run_locked(lambda: run_sync(apply=True))         # the SAME run_sync as the button
-        _state["last_summary"] = {"counts": report["counts"], "chunks_in_index": report.get("chunks_in_index"),
-                                  "warnings": len(report.get("warnings", [])), "report_file": report.get("report_file")}
-        _state["last_error"] = None
-    except Exception as exc:                                        # a scheduler outlives one bad run
-        _state["errors"] += 1
-        _state["last_error"] = f"{type(exc).__name__}: {exc}"
-    _state["runs"] += 1
-    _state["last_run"] = _stamp()
-    _state["last_seconds"] = round(time.perf_counter() - started, 2)
-    return status()
+If you are more than 10 minutes behind at the break: cut slide 20 (three ways to run a job) to one
+sentence, and show slide 17 (the code) for one minute without opening `sync.py`. The Signals
+material (the explain panel, permissions 403, delta feeds) is now in the Reference appendix: show it
+only if there is time at the end.
 
+**Demo rule:** never debug in front of the room for more than 60 seconds. Say "here's what it does",
+go to the next slide (it shows the output), and fix it at the break.
 
-def _loop(interval: float) -> None:
-    _state["next_run"] = _stamp(datetime.now() + timedelta(seconds=interval))
-    while not _stop.wait(interval):                                  # wait() returns True when stop() is called
-        if not _state["paused"]:
-            tick()
-        _state["next_run"] = _stamp(datetime.now() + timedelta(seconds=interval))
-```
+### Introducing the code
 
-If typing goes wrong: copy `fallbacks/part1/scheduler_complete.py` over the module and restart.
+Three code moments, one per question, and nothing typed live. The same four steps each time:
+
+1. **Picture first.** The concept slide (the plug, the ladder, the timer) is already on screen.
+2. **Say what it must do.** One sentence, before the code appears. They already know it from the picture.
+3. **The slide snippet.** At most 12 simplified lines, read top to bottom, each line mapped to the picture.
+4. **The real file, one function only.** Zoomed in, Ctrl+G to the line, read the one comment that matters,
+   close it. Don't scroll the file, don't explain syntax, don't open a second file.
+
+| Slide | File | Go to | The one thing to point at |
+|---|---|---|---|
+| 8 | `app/ingest/connector.py` | line 58 (`class Connector`), then 112 (`make_connector`) | four method names; `SOURCE` read from `.env` |
+| 17 | `app/ingest/sync.py` | line 167 (`build_plan`), then 201 | the comment "Cheapest check first", then the first `fetch()` at line 212 |
+| 21 | `app/ingest/scheduler.py` | line 75 (`tick`), then 102 (`_loop`) | the same `run_sync(apply=True)`; the `except` that counts instead of crashing; then `GET /sync/status` |
+
+Students write code tonight (the exercises), not during class.
 
 ### Where each Session 8 idea reappears
 

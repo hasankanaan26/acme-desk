@@ -2,8 +2,8 @@
 
 ## Annual Leave
 
-All full-time employees receive 20 days of paid annual leave per calendar year.
-Leave accrues monthly at a rate of 1.67 days per month.
+All full-time employees receive 24 days of paid annual leave per calendar year.
+Leave accrues monthly at a rate of 1.72 days per month.
 Unused leave can be carried over to the next year, up to a maximum of 5 days.
 
 ## Sick Leave

@@ -1,0 +1,93 @@
+event: step
+data: {"node": "identify", "user": "intern@acme.test", "groups": ["employees", "engineering"]}
+
+event: step
+data: {"node": "retrieve", "search_query": "How much can I spend per person on a team dinner?", "chunks": 5, "documents": ["Expense Policy (2026 edition)", "Remote Work Guidelines", "Team Directory"], "confidence": "medium", "hidden_documents": 0}
+
+event: token
+data: {"text": "You"}
+
+event: token
+data: {"text": " can"}
+
+event: token
+data: {"text": " spend"}
+
+event: token
+data: {"text": " up"}
+
+event: token
+data: {"text": " to"}
+
+event: token
+data: {"text": " $"}
+
+event: token
+data: {"text": "90"}
+
+event: token
+data: {"text": " per"}
+
+event: token
+data: {"text": " person"}
+
+event: token
+data: {"text": " on"}
+
+event: token
+data: {"text": " a"}
+
+event: token
+data: {"text": " team"}
+
+event: token
+data: {"text": " meal"}
+
+event: token
+data: {"text": " or"}
+
+event: token
+data: {"text": " event"}
+
+event: token
+data: {"text": ","}
+
+event: token
+data: {"text": " according"}
+
+event: token
+data: {"text": " to"}
+
+event: token
+data: {"text": " the"}
+
+event: token
+data: {"text": " Expense"}
+
+event: token
+data: {"text": " Policy"}
+
+event: token
+data: {"text": " ("}
+
+event: token
+data: {"text": "202"}
+
+event: token
+data: {"text": "6"}
+
+event: token
+data: {"text": " edition"}
+
+event: token
+data: {"text": ")."}
+
+event: step
+data: {"node": "answer", "outcome": "answered"}
+
+event: step
+data: {"node": "finalize", "outcome": null}
+
+event: done
+data: {"thread_id": "6ec4bcdd-2968-402b-83a9-c8753680fbc7", "request_id": "fbbeb8c3", "answer": "You can spend up to $90 per person on a team meal or event, according to the Expense Policy (2026 edition).", "outcome": "answered", "confidence": "medium", "search_query": "How much can I spend per person on a team dinner?", "sources": [{"doc_id": "FIN-EXP-2026", "title": "Expense Policy (2026 edition)", "version": 1, "status": "current", "effective_from": "2026-11-01", "section": "Team Events", "source_url": "file:///C:/Users/hasan/AppData/Local/Temp/claude/710a35ccfe19636a/ebdcc51e-1f22-4a99-b4fe-5cd1c6318b68/scratchpad/rehearsal-drive/finance/expense-policy-2026.md", "source": "finance/expense-policy-2026.md", "text": "Expense Policy (2026 edition) > Team Events\n- Team meals and events: up to $90 per person.\n- Offsites and team-building activities must be pre-approved by the department VP.\n- Client entertainment: up to $150 per person with prior manager approval.", "distance": 0.8138034869750361, "doc_type": "policy", "found_by": ["meaning", "words"]}, {"doc_id": "FIN-EXP-2026", "title": "Expense Policy (2026 edition)", "version": 1, "status": "current", "effective_from": "2026-11-01", "section": "Travel", "source_url": "file:///C:/Users/hasan/AppData/Local/Temp/claude/710a35ccfe19636a/ebdcc51e-1f22-4a99-b4fe-5cd1c6318b68/scratchpad/rehearsal-drive/finance/expense-policy-2026.md", "source": "finance/expense-policy-2026.md", "text": "Expense Policy (2026 edition) > Travel\n- Economy class for domestic flights. Business class for international flights over 6 hours.\n- Hotels: up to $230 per night for domestic travel and $330 for international travel.\n- Meal per diem during travel: $85 per day domestic, $110 per day international.\n- Book flights and hotels through the company-approved booking tool.", "distance": 1.2297680677532412, "doc_type": "policy", "found_by": ["meaning", "words"]}, {"doc_id": "HR-REMOTE", "title": "Remote Work Guidelines", "version": 1, "status": "current", "effective_from": "2025-06-01", "section": "In-Office Days", "source_url": "file:///C:/Users/hasan/AppData/Local/Temp/claude/710a35ccfe19636a/ebdcc51e-1f22-4a99-b4fe-5cd1c6318b68/scratchpad/rehearsal-drive/hr/remote-work.md", "source": "hr/remote-work.md", "text": "Remote Work Guidelines > In-Office Days\n- Hybrid employees are expected in the office a minimum of 2 days per week.\n- Teams may designate specific \"anchor days\" when all members are in the office.\n- Hot desking is available \u2014 reserve your desk through the office booking system.", "distance": 1.5265583166747727, "doc_type": "policy", "found_by": ["meaning", "words"]}, {"doc_id": "PEOPLE-DIRECTORY", "title": "Team Directory", "version": 1, "status": "current", "effective_from": "2026-09-01", "section": "David Kim", "source_url": "file:///C:/Users/hasan/AppData/Local/Temp/claude/710a35ccfe19636a/ebdcc51e-1f22-4a99-b4fe-5cd1c6318b68/scratchpad/rehearsal-drive/people/team-directory.csv", "source": "people/team-directory.csv", "text": "Team Directory > David Kim\nname: David Kim; role: DevOps Engineer; department: Engineering; office: New York; email: david.kim@acmecorp.com", "distance": 1.6461450092053056, "doc_type": "people", "found_by": ["meaning", "words"]}, {"doc_id": "PEOPLE-DIRECTORY", "title": "Team Directory", "version": 1, "status": "current", "effective_from": "2026-09-01", "section": "Jennifer Lee", "source_url": "file:///C:/Users/hasan/AppData/Local/Temp/claude/710a35ccfe19636a/ebdcc51e-1f22-4a99-b4fe-5cd1c6318b68/scratchpad/rehearsal-drive/people/team-directory.csv", "source": "people/team-directory.csv", "text": "Team Directory > Jennifer Lee\nname: Jennifer Lee; role: HR Business Partner; department: Human Resources; office: San Francisco; email: jennifer.lee@acmecorp.com", "distance": 1.59853942704032, "doc_type": "people", "found_by": ["meaning", "words"]}]}
+

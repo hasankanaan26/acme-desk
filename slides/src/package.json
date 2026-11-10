@@ -8,7 +8,8 @@
     "p3": "node p3.js out",
     "p4": "node p4.js out",
     "build": "node p1.js out",
-    "shots": "node shoot.js out/p1-preview.html out/shots-p1"
+    "shots": "node shoot.js out/p1-preview.html out/shots-p1",
+    "shots-p2": "node shoot.js out/p2-preview.html out/shots-p2"
   },
   "dependencies": {
     "playwright-core": "1.48.2",
