@@ -289,7 +289,8 @@ Skip the details in Reference (CSRF header) unless asked in the chat.`,
 Picture first: the chain along the top. "From the cookie, the server walks five tables: the session, the person, their company, their role, their groups. The result is one object we call the Principal: who is asking."
 Then the code: "This is the whole guard. Cookie in, Principal out, or a 401. Every route that needs a person says principal = Depends(get_principal), and gets this object. A route never reads a user, a tenant or a group from the request."
 Open the real file, zoomed in: ${CP}/app/auth/deps.py, Ctrl+G 35 (get_principal). Then ${CP}/app/auth/service.py line 158 (principal_for): point at the comment "Re-read on EVERY request". Close both.
-Why re-read every time: "It costs one small query. In exchange, an admin's change is live on the next request. No 'log out and back in', no stale token that still says hr."`,
+Why re-read every time: "It costs one small query. In exchange, an admin's change is live on the next request. No 'log out and back in', no stale token that still says hr."
+If the chat asks "why not a JWT?": one sentence ("a JWT can't be taken back, and its groups are frozen at sign-in"), then point at Reference, "sessions or JWTs?". Don't go there live.`,
   });
   const chain = ["cookie", "session", "user", "tenant", "role", "groups"];
   chain.forEach((t, i) => {
@@ -798,7 +799,7 @@ One sentence per card, pointing at it. These three carry over to any stack: the 
     notes: `Time: 2 minutes. Read the three, don't defend them.
 More in ${CP}/README.md, Honest limits: the users table is global (an admin can learn an email exists elsewhere); a chat turn holds a database connection while the model writes; the chat searches today's documents only (as_of is on Search and Ask).`,
   });
-  const gaps = [["Passwords, not SSO", "A company signs people in through Google Workspace or Entra ID.", "OpenID Connect: verify the provider's token, then the same session. users already has external_subject."],
+  const gaps = [["Passwords, not SSO", "A company signs people in through Google Workspace or Entra ID.", "OpenID Connect: verify the provider's ID token (a JWT, with PyJWT), then the same session."],
     ["Groups typed in by an admin", "A company's groups live in its directory, and Drive has its own sharing.", "Sync groups from the directory; read Drive's permissions with a second, admin-approved identity."],
     ["Hidden is not erased", "A hidden answer stays in the checkpoint tables, readable by the database owner.", "Forget a conversation (tonight), and a retention rule: a policy decision, then a job."]];
   gaps.forEach(([t, what, fix], i) => {
@@ -845,7 +846,7 @@ Read the chat one last time and answer what's there before you end the call.` })
   // ================================================================ REFERENCE (for the students' copy; not presented)
   s = S.darkSlide(deck, { section: "Reference", icon: I.book, kicker: "REFERENCE", title1: "For after class",
     subtitle: "Not presented. Read these with the code open.",
-    detail: "Commands  ·  the security model, layer by layer  ·  sign-in details  ·  the worker  ·  hybrid retrieval  ·  the chat's API",
+    detail: "Commands  ·  the security model, layer by layer  ·  sign-in details  ·  sessions or JWTs  ·  the worker  ·  hybrid retrieval  ·  the chat's API",
     notes: `Not presented. If someone asks a detail question in the chat, jump here.` });
   num(s, true);
 
@@ -892,7 +893,7 @@ Read the chat one last time and answer what's there before you end the call.` })
   s = S.contentSlide(deck, {
     section: "Reference", title: "Reference: sign-in, in detail",
     subtitle: "app/auth/: passwords.py, sessions.py, service.py, deps.py.",
-    notes: `Where SSO would plug in: app/auth/service.py, the comment at the top. Verify the provider's signed ID token, find the user by (auth_provider, external_subject), create the same session.`,
+    notes: `Where SSO would plug in: app/auth/service.py, the comment at the top. Verify the provider's signed ID token with PyJWT (next slide), find the user by (auth_provider, external_subject), create the same session.`,
   });
   const auth = [["Passwords", ["argon2id, the library's tuned defaults", "rehashed at sign-in when the parameters change", "12 characters minimum; no default password ships"]],
     ["Sessions", ["32 random bytes in the cookie, SHA-256 in the DB", "idle expiry 8 h, absolute 7 days (.env)", "a password change ends every other session"]],
@@ -902,6 +903,40 @@ Read the chat one last time and answer what's there before you end the call.` })
     const col = i % 2, row = Math.floor(i / 2);
     S.card(s, { x: 0.6 + col * 4.45, y: 1.55 + row * 1.72, w: 4.3, h: 1.6, title: t, titleSize: 13, body: items.map(z => ({ runs: z, bullet: true })), bodySize: 11, name: `auth-${i}` });
   });
+  num(s);
+
+  // ---------------------------------------------------------------- R sessions or JWTs
+  s = S.contentSlide(deck, {
+    section: "Reference", title: "Reference: sessions or JWTs?",
+    subtitle: "A JWT would work, and cost what today's demos show: sign-out now, groups that change live.",
+    takeaway: "The browser keeps a session. A JWT is what you verify at the door (SSO), or send between services.",
+    notes: `For the chat question "why not JWTs?". Answer in three sentences, then move on.
+"A JWT is a signed note the server hands you: it says who you are, and the server checks the signature instead of a table. That's its appeal: no lookup. But nobody can take it back before it expires, and its groups are the ones you had at sign-in."
+"We re-read the Principal on every request anyway, so that groups change live. Once you do that lookup, a JWT saves nothing, and a stolen one still works until it expires."
+"Where a JWT does belong: SSO. Google or Entra signs you in and hands us an ID token, a JWT. We verify it with PyJWT, then create the same session as today. Friday's tools could also use short-lived JWTs between services."
+Library, if asked: PyJWT (pip install "pyjwt[crypto]" for RS256 and the JWKS client). Small, maintained, the one FastAPI's docs use. Skip python-jose (barely maintained). Authlib or joserfc if you need the whole OAuth/OIDC client, or encrypted tokens (JWE).
+The two rules that matter: always pass algorithms=[...] (never trust the token's own alg header), and always check audience and issuer.
+In the code: ${CP}/app/auth/sessions.py, the comment "Why not a JWT?", and ${CP}/app/auth/service.py, "Where SSO would plug in".`,
+  });
+  S.table(s, { x: 0.6, y: 1.55, cols: [1.45, 1.5, 1.65], rowH: 0.62, headH: 0.32, size: 10.5,
+    header: ["", "Session (ours)", "JWT"],
+    rows: [[{ text: "Sign out, now", b: true, color: C.dark }, { text: "delete the row", color: C.deep, b: true }, { text: "still valid until it expires", color: C.redText }],
+      [{ text: "Admin takes hr away", b: true, color: C.dark }, { text: "the next request", color: C.deep, b: true }, { text: "its claims still say hr", color: C.redText }],
+      [{ text: "The server keeps", b: true, color: C.dark }, "one row per sign-in", "nothing: the appeal"],
+      [{ text: "Fits", b: true, color: C.dark }, "a browser and its own API", "SSO ID tokens, service to service"]] });
+  S.code(s, { x: 5.4, y: 1.55, w: 4.0, h: 2.8, label: "WHERE A JWT BELONGS: SSO, WITH PYJWT", size: 9.5, lines: [
+    "import jwt   # pip install \"pyjwt[crypto]\"",
+    "",
+    "keys = jwt.PyJWKClient(JWKS_URL)  # the IdP's",
+    "key = keys.get_signing_key_from_jwt(id_token)",
+    "claims = jwt.decode(id_token, key.key,",
+    { text: "    algorithms=[\"RS256\"],   # never the header's", color: C.amber },
+    { text: "    audience=CLIENT_ID, issuer=ISSUER)", color: C.amber },
+    "user = find_user(\"entra\", claims[\"sub\"])",
+    { text: "token = sessions.create(user.id, ...)", color: C.green, b: true },
+    "# ... and from here, today's session"] });
+  s.text([[{ text: "The library: PyJWT. ", b: true, color: C.dark }, { text: "Small, maintained, the one FastAPI's docs use. Skip python-jose; reach for Authlib only for a full OAuth client or encrypted tokens." }]],
+    { x: 0.6, y: 4.45, w: 8.8, h: 0.55, size: 11.5, color: C.slate, valign: "middle", name: "jwt-lib" });
   num(s);
 
   // ---------------------------------------------------------------- R the worker

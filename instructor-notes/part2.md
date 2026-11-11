@@ -6,7 +6,7 @@ the rehearsal on 10 Nov (a separate database, `acme_rehearsal`, Azure embeddings
 recorded in `fallbacks/part2/demo-transcript.txt`.
 
 - Code: `checkpoints/02-platform/` (run every script from the repo root)
-- Deck: `slides/part2-platform.pptx` (source `slides/src/p2.js`, 39 slides: 32 presented, 7 reference)
+- Deck: `slides/part2-platform.pptx` (source `slides/src/p2.js`, 40 slides: 32 presented, 8 reference)
 - Step-by-step version: `part2-teaching-guide.md`
 - Fallbacks: `instructor-notes/fallbacks/part2/` (15 screenshots, the transcript, the raw stream, the exercise solution)
 
@@ -213,7 +213,12 @@ sources. Nothing is a 500. Teach the Q3 demo from screens 09–14.
   Row-Level Security policy.
 - **Why sessions and not JWTs?** A server-side session can be ended instantly (a password change
   ends every other session; removing someone ends theirs). A JWT is valid until it expires unless you
-  keep a denylist, which is a session table again.
+  keep a denylist, which is a session table again. Its groups are also frozen at sign-in, and we
+  re-read them on every request anyway, so a JWT would save nothing here. Where a JWT does belong:
+  SSO (verify Google's or Entra's ID token, then create the same session) and service-to-service
+  tokens. Library: PyJWT (`pip install "pyjwt[crypto]"`, `PyJWKClient` for the provider's keys);
+  always pass `algorithms=[...]`, audience and issuer. Not python-jose (barely maintained); Authlib
+  only for a full OAuth client or encrypted tokens. Reference slide "sessions or JWTs?".
 - **Can an admin read someone's chat?** No, by design: `chat_threads` shows a conversation only to
   its owner. The audit log records which documents each turn retrieved (ids, not text).
 - **The checkpoint tables have no tenant column. Is that a hole?** Their policy shows a row only if
