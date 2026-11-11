@@ -2,8 +2,8 @@
 
 An employee helpdesk assistant for Acme Corp, built across four sessions as one production-shaped
 application: a real document source synced on a schedule, a platform on Postgres with sign-in,
-per-person access and tenants, tools behind real security controls, and guardrails, evals and a
-release gate on top.
+per-person access and tenants, retrieval techniques compared and measured on the same documents,
+and guardrails, evals and a release gate on top.
 
 Each session is one checkpoint, a complete runnable app copied forward from the one before it:
 
@@ -11,7 +11,7 @@ Each session is one checkpoint, a complete runnable app copied forward from the 
 |---|---|---|
 | `checkpoints/01-source` | Part 1, Mon 9 Nov | The ingestion pipeline on a real document source (Google Drive), synced on a timer |
 | `checkpoints/02-platform` | Part 2, Wed 11 Nov | Postgres + pgvector for all state, sign-in, access checked live in the query, Row-Level Security between tenants, a sync worker with its own database role |
-| `checkpoints/03-tools` | Part 3, Fri 13 Nov | Tools and agents with real security controls: allowlists, validation, approval, idempotency, budgets, audit |
+| `checkpoints/03-retrieval` | Part 3, Fri 13 Nov | Two indexes chunked differently, parent-document and HyDE, and a scoreboard of which technique wins which kind of question, at what cost, with leaks at zero |
 | `checkpoints/04-release` | Part 4, Mon 16 Nov | Guardrails, evals as a release gate, kill switch, dashboard, Docker, runbook |
 
 Everything runs on a laptop: local folder mode, local embeddings, fake services in the tests, and

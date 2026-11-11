@@ -1,213 +1,143 @@
 # Wednesday, step by step (Part 2, online)
 
-A simpler companion to `part2.md`. Same slides, same demos. Fewer new words, one main idea per
-block, and clear notes on what is optional. Use `part2.md` for the exact commands, the numbers and
-the "if something breaks" table.
+A simpler companion to `part2.md`. Same slides, same demo, one main idea per block. Use `part2.md`
+for the exact commands, the numbers and the "if something breaks" table.
 
-Like Monday: a talk with live demos, no questions to the room, no quizzes, no polls. Students write
-in the chat at any time; you read it at fixed points (each divider, the break, the end), so it never
-interrupts a demo.
+Re-planned on 11 Nov: a 10-minute warm-up on Google API calls, then the rest of the night on
+retrieval techniques, tried live in the RAG weeks' checkpoint 6 app (the "lab", port 8001). The
+platform block (sign-in, access, companies) was cut; the chat and the platform are in the reference
+slides. The night runs about 1 h 30.
+
+Like Monday: a talk with a live demo, no questions to the room, no quizzes, no polls. Students write
+in the chat at any time; you read it at fixed points (the divider, the break, the end).
 
 ---
 
 ## The whole night in three sentences
 
-If students leave able to say these three things, tonight worked:
+1. Plain top-k misses in a few typical ways; pick the fix by the kind of miss.
+2. Every fix has a price; pay only for a miss you have seen, then measure it.
+3. Better search never means more access: every technique searches as you.
 
-1. The server decides who you are: you sign in once, and nothing in a request can change it.
-2. The database decides what you may read, on every question, and an admin can change it with one click.
-3. A conversation follows the same rules on every turn, even what it remembers.
-
-Say these at the start, again after each block, and all three at the end.
+Say these at the start, after the break, and all three at the end.
 
 ## Six words for the chat
 
-Paste this into the chat when the session starts:
-
 ```
 Six words for tonight:
-sign-in    proving who you are, once; then a cookie stands for you
-session    the server's record of that sign-in
-Principal  who is asking: you, your company, your groups, worked out by the server
-access     which groups may read which document (one small table)
-tenant     a company; Acme and Globex share one database, never their rows
-thread     one conversation, saved in the database
+top-k        plain search: the k closest chunks to the question
+multi-query  ask the question several ways, merge the lists
+rerank       a second, slower model that re-orders the top 20
+contextual   give each chunk a line about where it came from
+router       one decision before the search: which path fits this question
+agentic      the model decides when to search again, within a budget
 ```
 
-Then say: "You'll hear other words tonight. These six are the ones that matter."
+Avoid saying RRF, cross-encoder or MRR unless someone asks in the chat. If you do, add "that's just
+the technical name for…" and the plain words.
 
-Avoid saying argon2id, RLS, RRF or checkpointer unless someone asks in the chat. If you do, add
-"that's just the technical name for…" and the plain words.
-
-## 20 minutes before class
+## 15 minutes before class
 
 Follow `part2.md` section 2. The short version:
 
-- [ ] `pip install -r requirements.txt` and `db.py migrate` if you haven't since Monday.
-- [ ] `.env`: `SOURCE=local`, `RETRIEVAL_STRATEGY=hybrid`, `ACME_SEED_PASSWORD` set.
-- [ ] The reset: `db.py seed --reset-passwords`, `fake_drive.py reset`, `apply 1`, `2`, `3`, `5` (not 4),
-      `sync.py --apply`. In that order.
-- [ ] The API on port 8000, the worker in a second terminal.
-- [ ] Two browser windows side by side: normal for the intern, private for the admin. Both signed in.
-- [ ] Check: the intern's search "salary range senior developer" shows the bands.
-- [ ] `fallbacks/part2/` open in the editor. Terminal and editor at 18pt.
-
-Online only:
-
-- [ ] A test screen share: can you read both browser windows side by side at that size? If not, plan
-      to switch windows instead, and say which one you're in every time.
-- [ ] Notifications off. The call's chat where you can see it while sharing.
-- [ ] The six words ready to paste.
+- [ ] The lab on port 8001 (`part2.md`, "The lab: start it"). Ask one question with `rerank` to load
+      the reranker. Options: leave top_k at 3, Doc type filter off. Azure embeddings and LLM, from the lab's .env.
+- [ ] Your Google-calls segment ready (slide 2).
+- [ ] `fallbacks/part2/screens-rag` open. Terminal and editor at 18pt.
+- [ ] Online: a test share, notifications off, the six words ready to paste.
 
 ---
 
-## Opening: 10 minutes (slides 1 to 5)
+## Opening: 3 minutes, then your 10 (slides 1 to 4)
 
-**Slide 1.** "Monday the copy stayed true by itself. Today: the copy is true, but not everyone should
-see all of it. Right now our intern can read the salary bands. We fix that live, with one click."
-Paste the six words.
+**Slide 1.** "Two parts tonight: Google calls, then finding better passages." Paste the six words.
 
-**Slide 2, the problem.** Tell the story: the intern asks what a Senior Developer earns and gets the
-numbers, cited. Then the two cracks, one sentence each: HR shared the bands by mistake; and Part 1
-believed whoever the URL said you were.
+**Slide 2, your segment.** Ten minutes on limiting Google API calls.
 
-**Slide 3.** Point at the four boxes, then the one database. "One place to keep it means one place to
-protect it." Don't read the table names.
+**Slide 3.** 30 seconds: point at today's card and Friday's.
 
-**Slide 4.** 30 seconds. Point at today's card.
-
-**Slide 5.** Read the three questions. "We'll come back to this slide after each one."
-
-Recap: "Tonight's problem: the right person, the wrong document."
+**Slide 4.** The two parts. "Most of tonight is retrieval."
 
 ---
 
-## Question 1, who is asking? 25 minutes (slides 6 to 11)
+## Retrieval, the techniques: 35 minutes (slides 5 to 15)
 
-Main idea: a badge printed at the door, not one you write yourself.
+Main idea: plain search misses in a few typical ways, and each fix has a price. Each technique has a
+"how it works" slide with a worked example from the lab, then the evidence slide.
 
-**Slide 6.** "Before we decide what someone may read, we have to know who they are."
+**Slide 6, how plain top-k works.** The baseline, slowly: embed, measure, keep the closest 3. The
+real list for the billing question: the handbook is #4, 0.03 past the cut. Everything else builds on it.
 
-**Slide 7, the badge.** Left: Part 1 believed `user=hr-partner`. Right: the same request today, and
-the server ignores it. "If the request can say it, the request can lie about it."
+**Slide 7, where it misses.** The map for the rest of the night. One row each. Row 1 is the one to
+remember: plain search answered the billing question with a real citation, and it was wrong.
 
-**Slide 8, the cookie.** Walk the four boxes left to right: password once, check the hash, make a
-session, every request after that. Then the three flags in one sentence each. Keep it to 6 minutes.
+**Slide 8, the lab.** Show it, don't teach it: one dropdown, nine strategies. Tonight's demo is one
+row of buttons in the Ask tab; each sets every option.
 
-**Slide 9, the Principal.** Point along the chain: cookie, session, person, company, role, groups.
-"That's the Principal: who is asking." Read the code. Open `deps.py` only if you're on time.
-One line to land: "It's re-read on every request, so an admin's change is live on the next one."
+**Slide 9, multi-query.** The three rewrites are real. Be honest: on our documents it did slightly worse
+than plain search, for an LLM call and four extra seconds; on the billing question it pushed the
+handbook out of the top 5.
 
-**Slide 10, live.** Before each step, say what it will show. Sign in, My account, the `user=` URL,
-the wrong password. If anything breaks, go to slide 11 and teach from it.
+**Slide 10, merging four lists by hand.** Reciprocal Rank Fusion with the real ranks. Work row 1 out
+loud: 1/62 + 1/63 + 1/62 + 1/61. Core Hours was first twice and still came second: agreement wins.
 
-**Slide 11.** Read the transcript top to bottom. End with the red box: "The intern is who they say
-they are, and they still find the salary bands. That's question 2."
+**Slide 11, why the handbook ranked 4th.** The real chunk: four topics, one vector. Vector search
+never reads question and chunk together; a cross-encoder does. That's why reranking helps.
 
-Recap: "The server decides who you are." Then read the chat.
+**Slide 12, reranking.** The most useful technique tonight. Search wide and fast, then a small model
+reads question and chunk together. The billing question: plain search had the handbook
+at #4, outside the 3 chunks the model reads; reranked, it is first, "two reviewers".
 
----
+**Slide 13, contextual retrieval.** Not in the lab. Our chunker's `title > heading` header is the free
+version; Anthropic's version has an LLM write the context, one call per chunk at index time.
 
-## Question 2, what may they read? 30 minutes (slides 12 to 18)
+**Slide 14, why search can't list.** Search returns text *about* remote work; the answer is 3 of 12
+directory rows. A list is a filter, not a ranking problem.
 
-**This is the hardest part of tonight. Slow down here.**
-
-Main idea: access is checked inside the search, by the database.
-
-**Slide 12.** "Now the important part: what they may read, and who enforces it."
-
-**Slide 13, two shortcuts.** A worked example, no code. Card 1: filter after the search: three of the
-five slots were salary bands, so the intern gets two results and the forbidden text already left the
-database. Card 2: tell the model not to: the text is in its context window. Card 3: filter inside
-the search. Read the dark line at the bottom.
-
-**Slide 14, the JOIN.** The key slide. Spend 6 minutes. Left: Part 1 stuck a flag on every chunk,
-so changing access meant a sync. Then the SQL: point at the green lines only. "Keep a chunk only if
-its document has an access row for one of my groups. Same query as the search. Change a row, and the
-next question obeys it." Open `store_pg.py` at line 152 if you're on time.
-
-**Slide 15, walls between companies.** "One table, two companies. Every transaction says which
-company it's for, and the database adds that to every query. Forget it: no rows. That's fail closed."
-
-**Slide 16, three keys.** Read the "Cannot" column only. Then the green box: Monday's gap is closed.
-
-**Slide 17, live.** The best moment of the night. Don't rush it. Two windows: intern left, admin
-right. Say what you're clicking as you click it: small clicks are hard to see on a shared screen.
-1. Intern searches: three of five are the bands.
-2. Admin unticks `employees`, ticks `hr` and `managers`, Save. Read the banner: "live now".
-3. Intern searches again: gone. "Nobody ran a sync. Nothing was re-embedded."
-4. Admin gives the intern `hr`: back. Takes it away: gone. "Same session, nobody signed out."
-5. Admin opens the Audit log: both changes, with before and after.
-
-**Slide 18.** Point at before and after, then the audit rows. "Who gave the intern the salary bands,
-and when? Now there's an answer."
-
-Recap: "The database decides what you may read." Then read the chat.
+**Slide 15, routers.** "Who works remotely?" Every search technique returns the policy. The router
+looks the rows up: three people, in under 30 ms.
 
 ---
 
-## Break: 10 minutes (slide 19)
+## Break: 10 minutes (slide 16)
 
-Admin: put the intern back to `employees` and `engineering`. Intern: open the Chat tab, New
-conversation. Read the chat. If several people say question 2 was confusing, say slide 14 again in
-two sentences when you come back.
-
----
-
-## Question 3, can we talk to it? 30 minutes (slides 20 to 28)
-
-Main idea: a conversation is a copy too, so it has to follow the rules.
-
-**Slide 20.** "Everything so far was one question, one answer. People ask follow-ups."
-
-**Slide 21.** Four cards, one sentence each. Slow down on the fourth: "the rules hold on every turn,
-including what the conversation remembers."
-
-**Slide 22, the workflow.** Trace the four boxes: who is asking, find what you may read, the model
-writes, wrap up. Then the yellow branch: "Nothing you may read answers it? We don't even call the
-model." End with: "Our code decides every step. Friday, a model chooses: that's an agent."
-
-**Slide 23, the code.** Optional depth. If you're behind, show it for one minute: "the four boxes, as
-code." The one point that matters is the right side: who is asking is given to every turn and never
-saved. Say it twice.
-
-**Slide 24, memory.** Left: only the owner sees a conversation, even with its id. Right: the three
-dots, read slowly. "You'll see this in a minute."
-
-**Slide 25, two ways to search.** Keep it short: meaning and words, each inside the filter, merged by
-position. The "Copilot" row is the example. Don't oversell: "on our small set, meaning does most of
-the work; words rescue exact names."
-
-**Slide 26.** Optional. One sentence if you're behind: "Streaming is lines of text over one response."
-
-**Slide 27, live.**
-1. Intern, team dinner: watch the chips light up and the words arrive. $90.
-2. "And for a client dinner?": hover the retrieve chip to show the rewritten question. $150.
-3. Admin gives `hr`. Intern, new conversation: the Senior Developer range.
-4. Admin takes `hr` away. Intern: "And for a junior?" No information, and the chip says one document
-   is no longer theirs. Click the conversation to reopen it: the first answer is hidden.
-Say: "Same conversation, same session. The memory followed the admin's click."
-
-If the model is slow or down, the chat says so and still shows the sources. Go to slide 28.
-
-**Slide 28.** Left: follow-ups. Right: the hidden answer. "The model never saw the old numbers."
-
-Recap: "A conversation keeps the rules." Then read the chat.
+Read the chat. Check the lab is still up at `http://localhost:8001/ui` and click button 2 (rerank)
+once so the model is loaded.
 
 ---
 
-## Wrap: 10 minutes (slides 29 to 32)
+## Retrieval, live and agents: 20 minutes (slides 17 to 21)
 
-**Slide 29.** The three sentences from the top of this guide, one per card.
+**Slide 17, live.** In the lab, the "Tonight's demo" buttons, in order: 1 dense and 2 rerank (billing),
+3 dense and 4 routed ("Who works remotely?"), 5 dense and 6 multi_query ("My first two weeks: office or
+home?": "not specified" vs "on-site for your first two weeks"), and if on time 7 and 8, the agent's two
+searches by hand (billing pager: "owned by Team Falcon", then "How do I page Team Falcon?").
 
-**Slide 30.** Read the three gaps quickly.
+**Slide 18.** The screenshots, if the lab misbehaves.
 
-**Slide 31, tonight.** "Exercise 1 is tonight again, on your laptop: everyone, first. Exercise 2 is the
-real one: a test is already written and skipped; remove the skip, watch it fail, make it pass.
-3 is a test you write. 4 is extra."
+**Slide 19, a question that needs two searches.** "Who do I page when the billing service is down?"
+One search finds "owned by Team Falcon" plus another team's pager; the second search, "How do I page
+Team Falcon?", finds falcon-primary. Real results (buttons 7 and 8).
 
-**Slide 32.** "Friday: the assistant starts doing things, and every rule from today still applies."
-Post "pull the repo on Friday morning" in the chat. Read the chat one last time.
+**Slide 20, agentic RAG.** They've seen agents. The point: search becomes a tool the model calls in a
+loop, with a budget. The history-rag numbers: 3, 5, 6 out of 6; the only one to pass the two-hop
+question; up to 20× the cost.
+
+**Slide 21, which one, when.** Read the "on our documents" column, then the green box: every technique
+runs inside the access filter.
+
+Recap: "Pick the fix by the kind of miss." Read the chat.
+
+---
+
+## Wrap: 10 minutes (slides 22 to 24)
+
+**Slide 22.** The three sentences, one per card.
+
+**Slide 23, tonight.** "One and two are in the lab. Three is extra, and a preview of Friday."
+
+**Slide 24, Friday.** "Tonight by eye; Friday we measure: two indexes, parent-document and HyDE, and a
+scoreboard." Post "pull the repo on Friday morning" in the chat. Read the chat one last time.
 
 ---
 
@@ -215,16 +145,16 @@ Post "pull the repo on Friday morning" in the chat. Read the chat one last time.
 
 Cut in this order:
 
-1. Slide 26: one sentence.
-2. Slide 23: show it for one minute, don't open the files.
-3. Slide 16: read only the "Cannot" column.
-4. Slide 25: the "Copilot" row only, skip the numbers.
-5. Slide 30: skip it.
+1. Slide 13: the three boxes only, skip Anthropic's numbers.
+2. Slide 17, step 4: skip button 5.
+3. Slide 10: say the one line ("agreement beats one first place"), skip the arithmetic.
+4. Slide 20: the right-hand table only.
 
-Never cut slide 14, the Q2 live demo, or the "access lost" half of the Q3 demo.
+Never cut slide 6 (how top-k works), reranking (11, 12), routers (14, 15), or the rerank and router
+steps of the lab demo.
 
 ## If a demo breaks
 
 Don't debug on the shared screen for more than 60 seconds. Say "here's what it would show", go to the
-next slide (it has the output, from real screenshots), and fix it at the break. If you need to look at
-something private, stop sharing first.
+next slide (real screenshots), and fix it at the break. If you need to look at something private, stop
+sharing first.
