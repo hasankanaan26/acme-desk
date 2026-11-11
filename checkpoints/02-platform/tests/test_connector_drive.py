@@ -36,10 +36,15 @@ class FakeDrive:
         self.children: dict[str, list[dict]] = {"root": []}
         self.blobs: dict[str, bytes] = {}
         self.calls: list[tuple] = []
+        self.log: list[dict] = []          # the change log: a page token is a position in it
+        self.log_down = False              # changes.list fails (to test that the gate fails open)
 
     # -- the client surface the connector touches --
     def files(self):
         return self
+
+    def changes(self):
+        return _ChangeLog(self)
 
     def list(self, q, **kwargs):
         folder_id = q.split("'")[1]
@@ -79,14 +84,40 @@ class FakeDrive:
         self.blobs[file_id] = data
         self.record(file_id).update(md5Checksum=hashlib.md5(data).hexdigest(), size=str(len(data)),
                                     version=str(int(self.record(file_id)["version"]) + 1))
+        self._logged(file_id)
 
     def bump_version(self, file_id):
         """A rename, a comment, a re-save: the version moves, the text does not."""
         self.record(file_id)["version"] = str(int(self.record(file_id)["version"]) + 1)
+        self._logged(file_id)
 
     def trash(self, file_id):
+        name = self.record(file_id)["name"]
         for rows in self.children.values():
             rows[:] = [r for r in rows if r["id"] != file_id]
+        self.log.append({"fileId": file_id, "removed": False, "file": {"name": name, "trashed": True}})
+
+    def _logged(self, file_id):
+        record = self.record(file_id)
+        self.log.append({"fileId": file_id, "removed": False,
+                         "file": {"name": record["name"], "mimeType": record["mimeType"], "trashed": False}})
+
+
+class _ChangeLog:
+    """changes.getStartPageToken and changes.list, over FakeDrive.log."""
+
+    def __init__(self, drive: FakeDrive):
+        self.drive = drive
+
+    def getStartPageToken(self, **kwargs):
+        self.drive.calls.append(("start",))
+        return _Call({"startPageToken": str(len(self.drive.log))})
+
+    def list(self, pageToken, **kwargs):
+        self.drive.calls.append(("changes", pageToken))
+        if self.drive.log_down:
+            raise ConnectionError("Drive change log unavailable")
+        return _Call({"changes": self.drive.log[int(pageToken):], "newStartPageToken": str(len(self.drive.log))})
 
 
 def seed_drive() -> FakeDrive:

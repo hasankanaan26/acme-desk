@@ -101,6 +101,19 @@
                     <label>Chunks to retrieve (top_k)
                         <input type="number" id="queryTopK" min="1" max="20" value="3">
                     </label>
+                    <label>Retrieval strategy
+                        <select id="queryStrategy">
+                            <option value="">.env default</option>
+                            <option value="dense">dense: by meaning (pgvector)</option>
+                            <option value="keyword">keyword: by words (full-text)</option>
+                            <option value="hybrid">hybrid: both, fused</option>
+                            <option value="rerank">rerank: dense top 20 + cross-encoder</option>
+                            <option value="hybrid_rerank">hybrid_rerank: hybrid top 20 + cross-encoder</option>
+                            <option value="hyde">hyde: search with an LLM-written answer</option>
+                            <option value="multi_query">multi_query: 3 LLM rewrites, fused</option>
+                            <option value="routed">routed: lists go to the directory</option>
+                        </select>
+                    </label>
                     <label>Prompt style
                         <select id="queryPromptStyle">
                             <option value="default">default: strict grounding</option>
@@ -121,9 +134,14 @@
                 <input type="number" id="searchTopK" min="1" max="20" value="5" title="top_k" class="narrow">
                 <select id="searchStrategy" title="How the search ranks" class="auto">
                     <option value="">.env default</option>
-                    <option value="dense">by meaning (pgvector)</option>
-                    <option value="keyword">by words (full-text)</option>
-                    <option value="hybrid">hybrid (both, fused)</option>
+<option value="dense">dense: by meaning (pgvector)</option>
+                    <option value="keyword">keyword: by words (full-text)</option>
+                    <option value="hybrid">hybrid: both, fused</option>
+                    <option value="rerank">rerank: dense top 20 + cross-encoder</option>
+                    <option value="hybrid_rerank">hybrid_rerank: hybrid top 20 + cross-encoder</option>
+                    <option value="hyde">hyde: search with an LLM-written answer</option>
+                    <option value="multi_query">multi_query: 3 LLM rewrites, fused</option>
+                    <option value="routed">routed: lists go to the directory</option>
                 </select>
                 <button type="submit">Search</button>
             </form>
@@ -174,6 +192,12 @@
                     <button type="button" data-sched="pause" id="schedPause">Pause</button>
                     <button type="button" data-sched="resume" id="schedResume">Resume</button>
                 </div>
+            </div>
+            <div class="card scheduler" id="gateCard">
+                <h3>The change gate</h3>
+                <div class="scheduler-state"><span class="muted">Loading…</span></div>
+                <div class="scheduler-last"></div>
+                <p class="meta">Before a scheduled tick, the worker asks Drive's change log what moved since its bookmark. Nothing in Drive and nothing in the register: the tick is skipped, no folder is walked. Run now always syncs. <code>app/ingest/gate.py</code></p>
             </div>
             <div class="output" id="syncOutput"></div>
             <div class="card">

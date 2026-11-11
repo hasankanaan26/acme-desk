@@ -22,6 +22,8 @@
 #   sync asks list_items(), compares eTags, and only then fetch()es
 #   the few files whose eTag moved. A folder of 20 files costs 8
 #   listing calls per tick and zero downloads when nothing changed.
+#   With the change gate (gate.py, section 4 below) a tick in which
+#   nothing changed costs ONE call, and the walk does not happen.
 # ============================================================
 
 import json
@@ -47,6 +49,7 @@ EXPORTS = {
     "html": {"document": ("text/html", ".html"), "spreadsheet": ("text/csv", ".csv")},
 }
 LIST_FIELDS = "nextPageToken, files(id,name,mimeType,md5Checksum,version,modifiedTime,size,webViewLink)"
+CHANGE_FIELDS = "nextPageToken, newStartPageToken, changes(fileId, removed, time, file(name, mimeType, trashed))"
 
 
 # Purpose:
@@ -81,6 +84,7 @@ class DriveConnector:
         self.doc_export = doc_export
         self._service = service          # tests inject a fake here
         self._by_path: dict[str, dict] = {}  # path -> the Drive file record, filled by list_items()
+        self.api_calls = 0                   # requests sent, so the Sync tab can compare a check with a walk
 
     def service(self):
         if self._service is None:
@@ -97,6 +101,7 @@ class DriveConnector:
         """One folder's direct children, following nextPageToken."""
         files, token = [], None
         while True:
+            self.api_calls += 1
             response = self.service().files().list(
                 q=f"'{folder_id}' in parents and trashed=false",
                 fields=LIST_FIELDS,
@@ -178,6 +183,7 @@ class DriveConnector:
             request = files.export_media(fileId=record["id"], mimeType=export_mime)
         else:
             request = files.get_media(fileId=record["id"], supportsAllDrives=True)
+        self.api_calls += 1
         data = request.execute(num_retries=3)
         return data if isinstance(data, bytes) else str(data).encode("utf-8")
 
@@ -198,14 +204,40 @@ class DriveConnector:
         record = self._by_path.get(path)
         return record.get("webViewLink", "") if record else ""
 
-    # ---- The delta feed (not used by the sync yet) ----
+    # ---- 4. What changed since last time? (the change gate, gate.py) ----
     #
-    # Drive can also hand you only what changed since last time, like
-    # Graph's /delta: changes.getStartPageToken() once, then
-    # changes.list(pageToken=...) returns the changed file ids and a
-    # new token to save. The sync above lists everything each tick,
-    # which is fine for 20 files and wasteful for 20,000.
+    # Drive keeps a change log, like Graph's /delta. Take a bookmark once
+    # (getStartPageToken), then ask "what changed since this bookmark?"
+    # (changes.list): the answer is the changed files and a new bookmark.
+    # The worker asks this before every scheduled tick and skips the sync
+    # when the answer is empty: one call instead of a walk of every folder.
     #
-    # TODO (Lab exercise): add start_page_token() and changed_since(token)
-    # here, save the token in runs/, and let the scheduler skip a tick
-    # when changed_since() comes back empty.
+    # The log covers everything the service account can see, not just
+    # this folder. Here it can only see this folder, so that is the same
+    # thing; with a wider account, filter by parents first.
+
+    def start_page_token(self) -> str:
+        """A bookmark at "now" in Drive's change log."""
+        self.api_calls += 1
+        response = self.service().changes().getStartPageToken(supportsAllDrives=True).execute(num_retries=3)
+        return response["startPageToken"]
+
+    # Purpose:
+    # Every change after the bookmark, and the bookmark to save for next
+    # time. Follows nextPageToken until Drive hands out newStartPageToken.
+    def changes_since(self, token: str) -> tuple[list[dict], str]:
+        changes = []
+        while True:
+            self.api_calls += 1
+            response = self.service().changes().list(
+                pageToken=token,
+                fields=CHANGE_FIELDS,
+                pageSize=1000,
+                includeRemoved=True,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            ).execute(num_retries=3)
+            changes.extend(response.get("changes", []))
+            if response.get("newStartPageToken"):
+                return changes, response["newStartPageToken"]
+            token = response["nextPageToken"]

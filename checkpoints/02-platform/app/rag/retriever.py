@@ -37,9 +37,12 @@ from app.config import (
     RRF_K,
 )
 from app.ingest.register import date_int
+from app.llm import cached_call_llm
+from app.prompts.query_rewrite import HYDE_PROMPT, MULTI_QUERY_PROMPT
+from app.rag import reranker, router
 from app.rag.classifier import classify_question
-from app.rag.embedder import embed_text
-from app.rag.store import Access, count, keyword_search, search
+from app.rag.embedder import embed_text, embed_texts
+from app.rag.store import Access, count, keyword_search, records, search
 
 
 # Purpose:
@@ -60,30 +63,135 @@ def check_date(as_of: str | None) -> str | None:
 # Purpose:
 # Embed the question and search, inside the user's filter.
 def retrieve(query: str, group_ids, top_k: int = 3, as_of: str | None = None,
-             doc_type: str | None = None, strategy: str | None = None) -> list[dict]:
+             doc_type: str | None = None, strategy: str | None = None,
+             trace: list[str] | None = None) -> list[dict]:
     if count() == 0:
         return []
     access = access_filter(group_ids, check_date(as_of), doc_type)
-    return find(query, embed_text(query), top_k, access, strategy)
+    return find(query, embed_text(query), top_k, access, strategy, trace)
 
 
 # Purpose:
-# One search, three ways to rank, the same access filter for all:
-#   dense    by meaning (pgvector)
-#   keyword  by words (Postgres full-text)
-#   hybrid   both lists, fused by rank
-def find(query: str, embedding: list[float], top_k: int, access: Access, strategy: str | None = None) -> list[dict]:
-    strategy = strategy or RETRIEVAL_STRATEGY
+# One search, many ways to rank, the same access filter for all:
+#   dense          by meaning (pgvector)
+#   keyword        by words (Postgres full-text)
+#   hybrid         both lists, fused by rank
+#   rerank         dense top 20 -> cross-encoder -> top k
+#   hybrid_rerank  hybrid top 20 -> cross-encoder -> top k
+#   hyde           search with an LLM-written hypothetical answer
+#   multi_query    the question + 3 LLM rewrites, each dense, fused
+#   routed         a "who / list / how many ... in <office>" question
+#                  -> every matching directory row; else hybrid_rerank
+# The last five come from the RAG weeks' checkpoint 6 (the lab). Every
+# first stage is search() or keyword_search(), so nothing a strategy
+# returns ever got past the access filter; a reranker or a rewrite only
+# re-orders or re-asks inside it.
+#
+# `trace`, if given, collects one line per step ("dense top 20 ->
+# cross-encoder (412 ms) -> top 5"), for /search to show.
+def find(query: str, embedding: list[float], top_k: int, access: Access, strategy: str | None = None,
+         trace: list[str] | None = None) -> list[dict]:
+    strategy = STRATEGY_ALIASES.get(strategy, strategy) if strategy else RETRIEVAL_STRATEGY
     if strategy not in RETRIEVAL_STRATEGIES:
         raise ValueError(f"strategy must be one of {', '.join(RETRIEVAL_STRATEGIES)}")
-    if strategy == "dense":
-        return [{**c, "found_by": ["meaning"]} for c in search(embedding, top_k=top_k, access=access)]
-    if strategy == "keyword":
-        return [{**c, "found_by": ["words"]} for c in keyword_search(query, embedding, top_k=top_k, access=access)]
+    steps = trace if trace is not None else []
     depth = max(top_k, HYBRID_CANDIDATES)
+
+    if strategy == "dense":
+        steps.append(f"dense top {top_k}")
+        return _dense(embedding, top_k, access)
+    if strategy == "keyword":
+        steps.append(f"keyword (full-text) top {top_k}")
+        return [{**c, "found_by": ["words"]} for c in keyword_search(query, embedding, top_k=top_k, access=access)]
+    if strategy == "hybrid":
+        steps.append(f"dense top {depth} + keyword top {depth} -> RRF -> top {top_k}")
+        return _hybrid(query, embedding, depth, access)[:top_k]
+    if strategy == "rerank":
+        return _rerank(query, _dense(embedding, depth, access), top_k, f"dense top {depth}", steps)
+    if strategy == "hybrid_rerank":
+        return _rerank(query, _hybrid(query, embedding, depth, access), top_k, f"hybrid top {depth}", steps)
+    if strategy == "hyde":
+        return _hyde(query, embedding, top_k, access, steps)
+    if strategy == "multi_query":
+        return _multi_query(query, embedding, top_k, depth, access, steps)
+    return _routed(query, embedding, top_k, depth, access, steps)
+
+
+STRATEGY_ALIASES = {"bm25": "keyword"}  # the lab's name for keyword search
+
+
+def _dense(embedding: list[float], k: int, access: Access) -> list[dict]:
+    return [{**c, "found_by": ["meaning"]} for c in search(embedding, top_k=k, access=access)]
+
+
+def _hybrid(query: str, embedding: list[float], depth: int, access: Access) -> list[dict]:
     by_meaning = search(embedding, top_k=depth, access=access)
     by_words = keyword_search(query, embedding, top_k=depth, access=access)
-    return fuse({"meaning": by_meaning, "words": by_words}, top_k)
+    return fuse({"meaning": by_meaning, "words": by_words}, depth)
+
+
+# Purpose:
+# Re-order a first stage's candidates with the cross-encoder. If the
+# model can't load (offline, first run without a download), keep the
+# first stage's order and say so: a slower search, never a failed one.
+def _rerank(query: str, candidates: list[dict], top_k: int, first: str, steps: list[str]) -> list[dict]:
+    try:
+        chunks, ms = reranker.rerank(query, candidates, top_k)
+    except Exception as exc:  # noqa: BLE001
+        steps.append(f"{first} -> reranker unavailable ({type(exc).__name__}): first-stage order -> top {top_k}")
+        return candidates[:top_k]
+    steps.append(f"{first} -> cross-encoder ({ms:.0f} ms) -> top {top_k}")
+    return chunks
+
+
+def _rewrite(prompt: str, steps: list[str]) -> str | None:
+    """One cached LLM call; None (and a trace line) when there is no model."""
+    try:
+        return cached_call_llm(prompt)
+    except Exception as exc:  # noqa: BLE001 - no key, quota, outage
+        steps.append(f"model unavailable ({type(exc).__name__}): searched with the question as asked")
+        return None
+
+
+# HyDE: a question doesn't look like its answer, so search with an
+# answer-shaped passage the model wrote. Distances are to that passage,
+# not to the question, so a confidence label reads a little high.
+def _hyde(query: str, embedding: list[float], top_k: int, access: Access, steps: list[str]) -> list[dict]:
+    hypothetical = _rewrite(HYDE_PROMPT.format(question=query), steps)
+    if not hypothetical:
+        steps.append(f"dense top {top_k}")
+        return _dense(embedding, top_k, access)
+    steps += [f"LLM wrote: {hypothetical[:90]}...", f"dense top {top_k} on the hypothetical answer"]
+    return _dense(embed_text(hypothetical), top_k, access)
+
+
+# Multi-query: one phrasing is one shot. The question plus three
+# rewrites, each searched by meaning, the rankings fused. The question
+# goes first, so a chunk it found keeps its distance to the question.
+def _multi_query(query: str, embedding: list[float], top_k: int, depth: int, access: Access,
+                 steps: list[str]) -> list[dict]:
+    reply = _rewrite(MULTI_QUERY_PROMPT.format(question=query), steps)
+    rewrites = [q.strip(" -•\t") for q in (reply or "").splitlines() if q.strip()][:3]
+    vectors = [embedding] + (embed_texts(rewrites) if rewrites else [])
+    ranked = {f"q{n}": search(v, top_k=depth, access=access) for n, v in enumerate(vectors)}
+    steps += [f"queries: {[query] + rewrites}", f"{len(vectors)} x dense top {depth} -> RRF -> top {top_k}"]
+    return [{**c, "found_by": ["meaning"]} for c in fuse(ranked, top_k)]
+
+
+# Routed: top k is a budget, and "who works remotely?" has as many right
+# answers as the directory has remote rows. Aggregation questions get a
+# lookup over EVERY directory row this user may read; the rest go to
+# hybrid_rerank. Someone who may not read the directory gets no rows.
+def _routed(query: str, embedding: list[float], top_k: int, depth: int, access: Access,
+            steps: list[str]) -> list[dict]:
+    rows = records(embedding, "people", access) if access.doc_type in (None, "people") else []
+    shape, wanted = router.classify(query, rows) if rows else ("pointwise", {})
+    if shape == "aggregation":
+        hits = [{**c, "found_by": ["records"]} for c in router.lookup(rows, wanted)]
+        steps.append(f"route: aggregation on {wanted} -> {len(hits)} matching record(s), all of them")
+        return hits
+    steps.append("route: pointwise")
+    return _rerank(query, _hybrid(query, embedding, depth, access), top_k, f"hybrid top {depth}", steps)
 
 
 # Purpose:
@@ -124,9 +232,11 @@ def retrieve_with_doc_filter(
     filter_mode: str = "auto",
     no_result_threshold: float | None = None,
     as_of: str | None = None,
+    strategy: str | None = None,
 ) -> dict:
     result = {
         "chunks": [],
+        "trace": [],
         "doc_type": None,
         "picked_by": None,
         "classifier_reply": None,
@@ -143,14 +253,18 @@ def retrieve_with_doc_filter(
 
     query_embedding = embed_text(query)
     if doc_type is None:
-        result["chunks"] = find(query, query_embedding, top_k, access_filter(group_ids, as_of))
+        result["chunks"] = find(query, query_embedding, top_k, access_filter(group_ids, as_of), strategy,
+                                result["trace"])
         return result
 
-    filtered = find(query, query_embedding, top_k, access_filter(group_ids, as_of, doc_type))
+    filtered = find(query, query_embedding, top_k, access_filter(group_ids, as_of, doc_type), strategy,
+                    result["trace"])
     if filtered:
         result["filtered_best_distance"] = min(c["distance"] for c in filtered)
     if is_no_result(filtered, no_result_threshold=no_result_threshold):
-        result["chunks"] = find(query, query_embedding, top_k, access_filter(group_ids, as_of))
+        result["trace"].append(f"nothing close enough in {doc_type}: searched every type")
+        result["chunks"] = find(query, query_embedding, top_k, access_filter(group_ids, as_of), strategy,
+                                result["trace"])
         result["fallback_used"] = True
     else:
         result["chunks"] = filtered

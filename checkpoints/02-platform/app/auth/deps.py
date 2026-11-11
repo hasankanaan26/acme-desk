@@ -18,8 +18,8 @@
 
 from fastapi import Depends, HTTPException, Request
 
-from app.auth.service import Principal, principal_for
-from app.config import SESSION_COOKIE
+from app.auth.service import Principal, principal_for, principal_for_email
+from app.config import AUTO_SIGNIN_EMAIL, SESSION_COOKIE
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 CSRF_HEADER = "X-Acme-Request"
@@ -35,6 +35,8 @@ def client_ip(request: Request) -> str | None:
 def get_principal(request: Request) -> Principal:
     token = request.cookies.get(SESSION_COOKIE)
     principal = principal_for(token) if token else None
+    if principal is None and AUTO_SIGNIN_EMAIL:
+        principal = principal_for_email(AUTO_SIGNIN_EMAIL)  # sign-in switched off
     if principal is None:
         raise HTTPException(status_code=401, detail="Sign in first.")
     request.state.principal = principal

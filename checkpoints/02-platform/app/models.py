@@ -28,7 +28,8 @@ class SearchResult(Provenance):
     source: str
     chunk_index: int
     distance: float
-    found_by: list[str] = []          # "meaning" (pgvector), "words" (full-text), or both
+    found_by: list[str] = []          # "meaning" (pgvector), "words" (full-text), both, or "records" (routed)
+    rerank_score: float | None = None  # the cross-encoder's score (rerank, hybrid_rerank, routed)
 
 
 class SearchResponse(BaseModel):
@@ -38,6 +39,8 @@ class SearchResponse(BaseModel):
     groups: list[str]
     as_of: str | None = None
     strategy: str = "dense"
+    trace: list[str] = []              # what the strategy did, one line per step
+    ms: float = 0.0                    # retrieval time, including any LLM rewrite
     results: list[SearchResult]
     total_results: int
 
@@ -95,6 +98,8 @@ class QueryResponse(BaseModel):
     request_id: str = ""
     doc_filter: DocFilterInfo | None = None
     llm_available: bool = True        # False: no written answer (no key, quota, outage); sources still shown
+    strategy: str = ""                # how the sources were found (see /search)
+    trace: list[str] = []
 
 
 class SyncDocAction(BaseModel):
@@ -164,6 +169,7 @@ class SchedulerStatus(BaseModel):
     seconds_to_next_run: int | None = None
     worker: str | None = None          # the worker process that checked in last, None = no worker running
     pending_requests: int = 0          # "Run now" clicks the worker has not picked up yet
+    gate: dict | None = None           # the change gate (app/ingest/gate.py), see worker.gate_status()
 
 
 # ---- Sign-in ----
@@ -260,3 +266,4 @@ class SyncRunInfo(BaseModel):
     counts: dict | None = None
     chunks_in_index: int | None = None
     error: str | None = None
+    gate: dict | None = None           # what the change gate decided, and what the run cost in Drive calls

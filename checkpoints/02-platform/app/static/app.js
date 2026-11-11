@@ -183,8 +183,17 @@ function badge(confidence) {
 
 function foundBy(list) {
     if (!list || !list.length) return "";
-    const label = list.length > 1 ? "meaning + words" : list[0];
+    const label = list.length > 1 ? list.join(" + ") : list[0];
     return '<span class="found" title="Found by its ' + escapeHtml(list.join(" and its ")) + '">' + escapeHtml(label) + "</span>";
+}
+
+// What the retrieval strategy did, one line per step (rerank time, LLM rewrites, the route).
+function traceBlock(strategy, trace, ms) {
+    if (!trace || !trace.length) return "";
+    const timing = ms ? " · " + Math.round(ms) + " ms" : "";
+    return '<p class="meta">Strategy <code>' + escapeHtml(strategy || "") + "</code>" + timing + "</p><pre>" +
+        trace.map(escapeHtml).join("
+") + "</pre>";
 }
 
 function chunkRow(title, text, distance, link, found) {
@@ -358,6 +367,7 @@ async function submitQuery(event) {
     const url = withParams("/query", {
         as_of: value("asOf"), top_k: value("queryTopK"),
         prompt_style: value("queryPromptStyle"), doc_filter: value("queryDocFilter"),
+        strategy: value("queryStrategy"),
     });
     await runWithBusy(event.target, "queryOutput", "Retrieving and generating…", async () => {
         const data = await api(url, { method: "POST", json: { question: value("queryQuestion") } });
@@ -383,7 +393,8 @@ function renderRagAnswer(data) {
         html += '<div class="card"><h3>Answer ' + badge(data.confidence) + '</h3><p class="answer">' + escapeHtml(data.answer) + "</p>" + asked + "</div>";
     }
     if (data.sources && data.sources.length) {
-        html += '<div class="card"><h3>Sources · ' + data.chunks_used + " chunks</h3>" + sourcesList(data.sources) + "</div>";
+        html += '<div class="card"><h3>Sources · ' + data.chunks_used + " chunks</h3>" + sourcesList(data.sources) +
+            traceBlock(data.strategy, data.trace) + "</div>";
     }
     return html;
 }
@@ -404,6 +415,7 @@ async function submitSearch(event) {
         }
         const rows = data.results.map((r, i) => chunkRow("#" + (i + 1) + "  " + provenance(r), r.text, r.distance, r.source_url, r.found_by)).join("");
         setOutput("searchOutput", '<div class="card"><h3>' + data.total_results + " closest chunks " + asked + "</h3>" + rows +
+            traceBlock(data.strategy, data.trace, data.ms) +
             '<p class="meta">Green ≤ ' + thresholds.high + ", amber ≤ " + thresholds.low + ", red ≤ " + thresholds.no_result +
             ", grey = no result.</p></div>");
     });
@@ -445,8 +457,9 @@ function renderScheduler(s) {
         : ["on", "every " + s.interval + "s · next sync in " + (s.seconds_to_next_run ?? "?") + "s · worker " + s.worker];
     const summary = s.last_summary || {};
     const counts = Object.entries(summary.counts || {}).map(([action, n]) => stat(n, action)).join("");
-    const last = s.last_run
-        ? "Last sync " + when(s.last_run) + " · " + s.last_seconds + "s · " + (summary.chunks_in_index ?? "?") + " chunks in the index"
+    const last = summary.at
+        ? "Last sync " + when(summary.at) + " · " + summary.seconds + "s · " + (summary.chunks_in_index ?? "?") + " chunks in the index" +
+          (s.last_run && s.last_run !== summary.at ? " · last check " + when(s.last_run) : "")
         : "No sync yet.";
     const pending = s.pending_requests ? " · " + s.pending_requests + " Run now waiting for the worker" : "";
     card.querySelector(".scheduler-state").innerHTML =
@@ -458,19 +471,76 @@ function renderScheduler(s) {
         (s.last_error ? errorBanner(new Error("Last sync failed, index untouched: " + s.last_error)) : "");
     document.getElementById("schedPause").disabled = s.paused;
     document.getElementById("schedResume").disabled = !s.paused;
+    renderGate(s.gate);
+}
+
+// ---------- The change gate (app/ingest/gate.py) ----------
+
+function duration(seconds) {
+    if (seconds == null) return "?";
+    const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), s = seconds % 60;
+    return h ? h + "h " + m + "m" : m ? m + "m " + s + "s" : s + "s";
+}
+
+function calls(n) { return n == null ? "?" : n + " Drive call" + (n === 1 ? "" : "s"); }
+
+function renderGate(g) {
+    const card = document.getElementById("gateCard");
+    if (!g) return;
+    const state = !g.change_log ? ["off", "none", "this source has no change log (the local folder): every tick walks it, as before"]
+        : !g.bookmark ? ["no bookmark", "medium", "the next sync takes one, then quiet ticks are skipped"]
+        : g.last_decision === "skip" ? ["quiet", "high", "last check " + new Date(g.last_check).toLocaleTimeString() + ": nothing changed, so nothing was walked"]
+        : ["opened", "medium", "last check " + (g.last_check ? new Date(g.last_check).toLocaleTimeString() : "–") + ": " + (g.last_reason || "")];
+    card.querySelector(".scheduler-state").innerHTML =
+        '<span class="badge badge-' + state[1] + '">' + state[0] + '</span> <span class="muted">' + escapeHtml(state[2]) + "</span>";
+    if (!g.change_log) {
+        card.querySelector(".scheduler-last").innerHTML = "";
+        return;
+    }
+    const stats = [
+        stat(g.skipped_since_last_sync, "quiet ticks skipped since the last sync"),
+        stat(calls(g.check_calls), "per quiet tick (the check)"),
+        stat(calls(g.walk_calls), "per tick that syncs (the walk)"),
+        stat(g.full_sync_due_at ? duration(g.seconds_to_full_sync) : "–", "until the safety-net full sync"),
+    ].join("");
+    card.querySelector(".scheduler-last").innerHTML = '<div class="stats">' + stats + "</div>" +
+        (g.quiet_since ? '<p class="meta">Quiet since ' + when(g.quiet_since) + ".</p>" : "");
+}
+
+function gateCell(g) {
+    if (!g) return '<span class="muted">–</span>';
+    const badge = g.decision === "skip" ? '<span class="badge badge-none">skip</span>'
+        : g.change_log ? '<span class="badge badge-medium">run</span>' : '<span class="badge badge-none">no log</span>';
+    const n = g.changes != null ? " · " + g.changes + " change" + (g.changes === 1 ? "" : "s") : "";
+    return badge + ' <span class="muted">' + escapeHtml(calls(g.drive_calls) + n) + "</span>";
+}
+
+function gateDetail(g) {
+    if (!g) return "";
+    const files = (g.changed_files || []).map(f => "<li><code>" + escapeHtml(f.name) + "</code> " + escapeHtml(f.kind) + "</li>").join("");
+    const more = g.changes > (g.changed_files || []).length ? "<li>… and " + (g.changes - g.changed_files.length) + " more</li>" : "";
+    return '<h4>The change gate</h4><p><span class="badge badge-' + (g.decision === "skip" ? "none" : "medium") + '">' +
+        escapeHtml(g.decision) + "</span> " + escapeHtml(g.reason) + "</p>" +
+        '<p class="meta">' + escapeHtml(calls(g.drive_calls)) + " in this run" +
+        (g.changes != null ? " · " + g.changes + " change(s) in Drive's log since the bookmark" : "") +
+        (g.register_changed ? " · the register changed" : "") + "</p>" +
+        (files ? "<ul>" + files + more + "</ul>" : "");
 }
 
 let lastRunShown = null;
+let runsById = {};
 
 async function refreshSync() {
     try {
         renderScheduler(await api("/sync/status"));
         const runs = await api("/sync/runs?limit=15");
-        setOutput("runsOutput", "<table><tr><th>#</th><th>Trigger</th><th>By</th><th>Started</th><th>Seconds</th><th>Result</th><th>Counts</th></tr>" +
+        runsById = Object.fromEntries(runs.map(r => [r.id, r]));
+        setOutput("runsOutput", "<table><tr><th>#</th><th>Trigger</th><th>By</th><th>Started</th><th>Seconds</th><th>Gate</th><th>Result</th><th>Counts</th></tr>" +
             runs.map(r => '<tr data-run="' + r.id + '" class="clickable"><td>' + r.id + "</td><td>" + escapeHtml(r.trigger) + "</td><td>" +
                 escapeHtml(r.requested_by || "") + "</td><td>" + when(r.started_at) + '</td><td class="num">' + (r.seconds ?? "") +
-                "</td><td>" + runResult(r) + "</td><td>" + escapeHtml(Object.entries(r.counts || {}).map(([k, v]) => k + " " + v).join(", ")) +
-                "</td></tr>").join("") + "</table>" + '<p class="meta">Click a run to see its plan.</p>');
+                "</td><td>" + gateCell(r.gate) + "</td><td>" + runResult(r) + "</td><td>" +
+                escapeHtml(Object.entries(r.counts || {}).map(([k, v]) => k + " " + v).join(", ")) +
+                "</td></tr>").join("") + "</table>" + '<p class="meta">Click a run to see its plan, or why the gate skipped it.</p>');
         const latest = runs.find(r => r.finished_at && r.ok !== null);
         if (latest && latest.id !== lastRunShown) showRun(latest.id);
     } catch (err) {
@@ -480,6 +550,7 @@ async function refreshSync() {
 
 function runResult(r) {
     if (!r.finished_at) return '<span class="badge badge-high">running</span>';
+    if (r.skipped_reason && r.gate && r.gate.decision === "skip") return '<span class="badge badge-none">skipped</span>';
     if (r.skipped_reason) return '<span class="badge badge-none">skipped</span> ' + escapeHtml(r.skipped_reason);
     if (r.ok) return '<span class="badge badge-high">ok</span>';
     return '<span class="badge badge-low">failed</span> ' + escapeHtml(r.error || "");
@@ -487,6 +558,12 @@ function runResult(r) {
 
 async function showRun(id) {
     lastRunShown = id;
+    const row = runsById[id];
+    if (row && row.skipped_reason) {   // no plan: the gate (or another worker) skipped it
+        setOutput("syncOutput", '<div class="card"><h3>Sync run #' + id + " · skipped</h3>" +
+            (row.gate ? gateDetail(row.gate) : "<p>" + escapeHtml(row.skipped_reason) + "</p>") + "</div>");
+        return;
+    }
     try {
         const data = await api("/sync/runs/" + id);
         const rows = data.documents.filter(d => d.action !== "unchanged").map(d =>
@@ -498,7 +575,8 @@ async function showRun(id) {
         setOutput("syncOutput", '<div class="card"><h3>Sync run #' + id + " · " + escapeHtml(data.collection) + "</h3>" +
             '<div class="stats">' + Object.entries(data.counts).map(([a, n]) => stat(n, a)).join("") + "</div>" +
             (rows ? '<table class="plan"><tr><th>Action</th><th>Document</th><th>Why</th></tr>' + rows + "</table>" : "") +
-            (same ? '<p class="meta">' + same + " unchanged: same eTag, not even downloaded.</p>" : "") + warnings + "</div>");
+            (same ? '<p class="meta">' + same + " unchanged: same eTag, not even downloaded.</p>" : "") + warnings +
+            gateDetail(row && row.gate) + "</div>");
     } catch (err) {
         setOutput("syncOutput", errorBanner(err));
     }

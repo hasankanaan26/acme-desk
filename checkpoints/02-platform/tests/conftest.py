@@ -63,6 +63,9 @@ os.environ["EMBEDDING_PROVIDER"] = "fake"
 os.environ["EMBED_RETRY_BASE_SECONDS"] = "0"
 os.environ["SYNC_INTERVAL_SECONDS"] = "0"
 os.environ["ACME_SEED_PASSWORD"] = PASSWORD
+os.environ["ACME_AUTO_SIGNIN_EMAIL"] = ""      # sign-in always on in tests, whatever .env says
+os.environ["RETRIEVAL_STRATEGY"] = "hybrid"    # the tests' default, whatever .env says
+os.environ["RERANKER"] = "fake"                # shared-word count: no model download in tests
 # No paid API, ever: blank every model key, whatever .env holds. (load_dotenv
 # never overrides a variable that is already set, even to "".)
 for key in ("GEMINI_API_KEY", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT"):
@@ -149,7 +152,7 @@ def friday(tenants):
         conn.execute("DELETE FROM sync_runs; DELETE FROM sync_requests; DELETE FROM sessions; "
                      "DELETE FROM login_attempts; DELETE FROM audit_log; DELETE FROM workers; "
                      "DELETE FROM chat_threads; DELETE FROM checkpoint_writes; DELETE FROM checkpoint_blobs; "
-                     "DELETE FROM checkpoints")
+                     "DELETE FROM checkpoints; DELETE FROM sync_cursors")
     fake_drive.reset()
     from app.db.seed import seed
 

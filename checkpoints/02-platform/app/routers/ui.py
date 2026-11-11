@@ -17,7 +17,9 @@
 from pathlib import Path
 
 from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from app.config import AUTO_SIGNIN_EMAIL
 
 router = APIRouter(tags=["UI"])
 STATIC = Path(__file__).parent.parent / "static"
@@ -25,6 +27,8 @@ STATIC = Path(__file__).parent.parent / "static"
 
 @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
 def login_page():
+    if AUTO_SIGNIN_EMAIL:  # sign-in switched off: straight to the app
+        return RedirectResponse("/ui", status_code=303)
     return HTMLResponse((STATIC / "login.html").read_text(encoding="utf-8"))
 
 

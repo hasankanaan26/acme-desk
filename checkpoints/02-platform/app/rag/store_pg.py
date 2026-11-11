@@ -207,6 +207,38 @@ def keyword_search(query_text: str, query_embedding: list[float], top_k: int = 3
     return [_item(r) for r in rows]
 
 
+# Purpose:
+# EVERY chunk of one doc type this user may read, not a top k: what a
+# structured lookup needs ("who works remotely?" has as many answers as
+# the directory has matching rows). Same access filter as search(); each
+# row still carries its distance to the question, for the confidence.
+def records(query_embedding: list[float], doc_type: str, access: Access | None = None,
+            collection: str | None = None, limit: int = 1000) -> list[dict]:
+    name = _index(collection)
+    if not name or access is None or not access.group_ids:
+        return []  # no index, or nobody: fail closed
+    dims = len(query_embedding)
+    when = (sql.SQL("c.effective_from <= %(day)s AND c.effective_to > %(day)s") if access.as_of
+            else sql.SQL("c.status = 'current'"))
+    query = sql.SQL("""
+        SELECT c.id, c.text, c.metadata,
+               2 * (c.embedding::vector({d}) <=> %(q)s::vector({d})) AS distance
+        FROM chunks c
+        WHERE c.index_name = %(index)s
+          AND c.dims = {d}
+          AND {when}
+          AND c.doc_type = %(doc_type)s
+          AND EXISTS (SELECT 1 FROM document_acl a
+                      WHERE a.tenant_id = c.tenant_id AND a.doc_id = c.doc_id
+                        AND a.group_id = ANY(%(groups)s::uuid[]))
+        ORDER BY c.doc_id, c.chunk_index
+        LIMIT %(k)s""").format(d=sql.Literal(dims), when=when)
+    rows = db.current().execute(query, {"q": _vector(query_embedding), "index": name, "day": access.as_of,
+                                        "doc_type": doc_type, "groups": list(access.group_ids),
+                                        "k": limit}).fetchall()
+    return [_item(r) for r in rows]
+
+
 def _item(r) -> dict:
     meta = r["metadata"]
     return {

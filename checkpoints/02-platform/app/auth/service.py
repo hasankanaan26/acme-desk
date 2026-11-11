@@ -152,6 +152,25 @@ def _principal(conn, user_id: str, email: str, display_name: str, tenant_id: str
 
 
 # Purpose:
+# The Principal for an account by email, with no password and no
+# session. Only for ACME_AUTO_SIGNIN_EMAIL (sign-in switched off).
+def principal_for_email(email: str) -> Principal | None:
+    with db.tx("app") as conn:
+        user = conn.execute("SELECT id, email, display_name, is_active FROM users WHERE email = %s",
+                            (email,)).fetchone()
+        if not user or not user["is_active"]:
+            return None
+        conn.execute("SELECT set_config('app.user_id', %s, true)", (str(user["id"]),))
+        membership = conn.execute("SELECT tenant_id FROM memberships WHERE user_id = %s "
+                                  "ORDER BY created_at LIMIT 1", (user["id"],)).fetchone()
+        if not membership:
+            return None
+        tenant_id = str(membership["tenant_id"])
+        conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
+        return _principal(conn, str(user["id"]), user["email"], user["display_name"], tenant_id)
+
+
+# Purpose:
 # The Principal behind a session cookie, or None. Re-read on EVERY
 # request: remove someone from the hr group and their very next
 # question is answered without hr's documents.

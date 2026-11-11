@@ -15,6 +15,9 @@
 #   3. State in tables, not memory: every run is a sync_runs row,
 #      "Run now" is a sync_requests row plus a NOTIFY, and the worker
 #      writes a heartbeat to `workers`. The API only reads them.
+#   4. The change gate (gate.py): a scheduled tick first asks Drive's
+#      change log whether anything moved, and is skipped when nothing
+#      did. Run now always syncs.
 #
 # Each sync runs in ONE transaction: plan, embed, delete, insert,
 # flip the live index. It commits as a whole or not at all.
@@ -32,6 +35,7 @@ from psycopg.types.json import Jsonb
 
 from app import db
 from app.config import DATABASE_SYNC_URL, SYNC_INTERVAL_SECONDS
+from app.ingest import gate
 from app.ingest.connector import make_connector
 from app.ingest.sync import run_sync
 
@@ -80,14 +84,26 @@ def run_tenant(tenant: dict, trigger: str = "tick", apply: bool = True, rebuild:
                 "RETURNING id", (trigger, requested_by, WORKER_ID)).fetchone()["id"]
 
     started = time.perf_counter()
-    report, error, skipped = None, None, None
+    report, error, skipped, decision, connector = None, None, None, None, None
     try:
         with db.tx("sync", tid) as conn:
             # One sync per tenant at a time, across every worker process.
             if not try_lock_tenant(conn, tid):
                 skipped = "another sync of this tenant is running"
             else:
-                report = run_sync(apply=apply, rebuild=rebuild, connector=make_connector(tenant))
+                connector = make_connector(tenant)
+                # The change gate (gate.py): a quiet tick ends here, after one
+                # call to Drive's change log. A dry run never touches the bookmark.
+                decision = gate.check(connector, trigger=trigger, rebuild=rebuild) if apply else None
+                if decision and not decision.run:
+                    skipped = decision.reason
+                    gate.advance(decision)
+                else:
+                    report = run_sync(apply=apply, rebuild=rebuild, connector=connector)
+                    # Same transaction: the bookmark moves only if this sync commits,
+                    # and only if what it built went live.
+                    if decision and report.get("activated", True) is not False:
+                        gate.save(decision)
     except Exception as exc:  # noqa: BLE001 - a worker must outlive one bad run
         error = f"{type(exc).__name__}: {exc}"
         if not apply:
@@ -96,14 +112,15 @@ def run_tenant(tenant: dict, trigger: str = "tick", apply: bool = True, rebuild:
     if run_id is not None:
         seconds = round(time.perf_counter() - started, 2)
         ok = None if skipped else (error is None and report.get("activated", True) is not False)
+        gate_record = decision.record(connector) if decision else None
         with db.tx("sync", tid) as conn:
             conn.execute("""
                 UPDATE sync_runs SET finished_at = now(), seconds = %s, ok = %s, skipped_reason = %s,
-                                     counts = %s, chunks_in_index = %s, error = %s, report = %s
+                                     counts = %s, chunks_in_index = %s, error = %s, report = %s, gate = %s
                 WHERE id = %s""",
                 (seconds, ok, skipped, Jsonb(report["counts"]) if report else None,
                  report.get("chunks_in_index") if report else None, error,
-                 Jsonb(report) if report else None, run_id))
+                 Jsonb(report) if report else None, Jsonb(gate_record) if gate_record else None, run_id))
             # Audit what matters: a run that changed the index, failed, or was
             # asked for by a person. A quiet tick every minute is in sync_runs,
             # not in the audit log (4,000 "nothing happened" rows a day hide
@@ -123,7 +140,8 @@ def run_tenant(tenant: dict, trigger: str = "tick", apply: bool = True, rebuild:
             log.info("%s: sync #%s %s | %s chunks", tenant["slug"], run_id,
                      ", ".join(f"{k} {v}" for k, v in report["counts"].items()) or "nothing",
                      report.get("chunks_in_index"))
-    return {"run_id": run_id, "report": report, "error": error, "skipped": skipped}
+    return {"run_id": run_id, "report": report, "error": error, "skipped": skipped,
+            "gate": decision.record(connector) if decision else None}
 
 
 # Purpose:
@@ -192,7 +210,7 @@ def status() -> dict:
     conn = db.current()
     worker = conn.execute("SELECT * FROM workers WHERE last_seen_at > now() - make_interval(secs => %s) "
                           "ORDER BY last_seen_at DESC LIMIT 1", (ALIVE_SECONDS,)).fetchone()
-    tenant = conn.execute("SELECT sync_paused FROM tenants WHERE id = app_tenant()").fetchone()
+    tenant = conn.execute("SELECT sync_paused, source_kind FROM tenants WHERE id = app_tenant()").fetchone()
     stats = conn.execute("""SELECT count(*) AS runs, count(*) FILTER (WHERE ok = false) AS errors,
                                    count(*) FILTER (WHERE skipped_reason IS NOT NULL) AS skipped
                             FROM sync_runs""").fetchone()
@@ -207,11 +225,14 @@ def status() -> dict:
         nxt = last_done["finished_at"] + timedelta(seconds=interval)
         next_run = nxt.astimezone().isoformat(timespec="seconds")
         seconds_to_next = max(0, round((nxt - datetime.now(timezone.utc)).total_seconds()))
+    # The last run that actually synced (a skipped tick has no plan to summarise).
+    synced = conn.execute("SELECT * FROM sync_runs WHERE report IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
     summary = None
-    if last_done and last_done["report"]:
-        summary = {"counts": last_done["counts"], "chunks_in_index": last_done["chunks_in_index"],
-                   "warnings": len(last_done["report"].get("warnings", [])),
-                   "report_file": f"sync run #{last_done['id']}"}
+    if synced:
+        summary = {"counts": synced["counts"], "chunks_in_index": synced["chunks_in_index"],
+                   "warnings": len(synced["report"].get("warnings", [])),
+                   "report_file": f"sync run #{synced['id']}", "run_id": synced["id"], "at": _iso(synced["finished_at"]),
+                   "seconds": float(synced["seconds"]) if synced["seconds"] is not None else None}
     return {
         "enabled": worker is not None,
         "paused": paused,
@@ -228,6 +249,46 @@ def status() -> dict:
         "seconds_to_next_run": seconds_to_next,
         "worker": worker["id"] if worker else None,
         "pending_requests": pending,
+        "gate": gate_status(tenant["source_kind"] if tenant else None, synced),
+    }
+
+
+def _iso(when: datetime | None) -> str | None:
+    return when.astimezone().isoformat(timespec="seconds") if when else None
+
+
+# Purpose:
+# The change gate's card in the Sync tab: is there a bookmark, what did
+# the last check decide, how many quiet ticks it skipped since the last
+# real sync, what a check costs next to a walk, and when the safety-net
+# full sync is due.
+def gate_status(source_kind: str | None, synced: dict | None) -> dict:
+    conn = db.current()
+    cursor = conn.execute("SELECT * FROM sync_cursors").fetchone()
+    last = conn.execute("SELECT id, finished_at, gate FROM sync_runs WHERE gate IS NOT NULL AND finished_at IS NOT NULL "
+                        "ORDER BY id DESC LIMIT 1").fetchone()
+    quiet = conn.execute("SELECT count(*) AS n, min(started_at) AS since FROM sync_runs "
+                         "WHERE gate->>'decision' = 'skip' AND id > %s",
+                         (synced["id"] if synced else 0,)).fetchone()
+    last_skip = conn.execute("SELECT gate FROM sync_runs WHERE gate->>'decision' = 'skip' "
+                             "ORDER BY id DESC LIMIT 1").fetchone()
+    last_walk = conn.execute("SELECT gate FROM sync_runs WHERE gate->>'decision' = 'run' AND report IS NOT NULL "
+                             "AND gate->>'drive_calls' IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
+    due = cursor["full_sync_due_at"] if cursor else None
+    return {
+        "change_log": source_kind == "drive",
+        "bookmark": bool(cursor and cursor["page_token"]),
+        "last_check": _iso(last["finished_at"]) if last else None,
+        "last_check_run": last["id"] if last else None,
+        "last_decision": last["gate"]["decision"] if last else None,
+        "last_reason": last["gate"]["reason"] if last else None,
+        "last_changes": last["gate"].get("changes") if last else None,
+        "skipped_since_last_sync": quiet["n"],
+        "quiet_since": _iso(quiet["since"]),
+        "check_calls": last_skip["gate"].get("drive_calls") if last_skip else None,
+        "walk_calls": last_walk["gate"].get("drive_calls") if last_walk else None,
+        "full_sync_due_at": _iso(due),
+        "seconds_to_full_sync": max(0, round((due - datetime.now(timezone.utc)).total_seconds())) if due else None,
     }
 
 

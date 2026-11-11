@@ -48,23 +48,29 @@ questions; the Postgres checkpointer, with its tables under a policy that shows 
 the person who started it; every turn re-checks the documents earlier answers used and hides the ones
 built on a document the person can no longer read; hybrid retrieval (pgvector + Postgres full-text,
 fused by rank); the reply streamed as Server-Sent Events (`app/assistant/`, `app/routers/chat.py`).
-88 tests.
+
+Merged in on 11 Nov: the change gate (a tick asks Drive's change log first and skips the sync when
+nothing moved, `app/ingest/gate.py`, `005_change_gate.sql`), and the RAG weeks' checkpoint 6
+techniques on the same Postgres store and access filter: `rerank`, `hybrid_rerank`, `hyde`,
+`multi_query`, `routed` (`app/rag/reranker.py`, `router.py`), each with a `trace`, on `/search`,
+`/query` and both UI tabs. 111 tests.
 
 Demo flow, chat: the team dinner limit ($90), "And for a client dinner?" ($150, the follow-up rewritten)
 → give the intern `hr`, the salary bands in a new conversation → take `hr` away, "And for a junior?":
 no information, and the earlier answer is hidden → the same thread as `hr-partner`: 404.
 
-## 03-tools: tools and agents with real security controls (Part 3, Fri 13 Nov)
+## 03-retrieval: which search wins, and how you prove it (Part 3, Fri 13 Nov)
 
-Planned: six tools (`search_docs`, `lookup_employee`, `get_my_tickets`, `open_it_ticket`,
-`file_leave_request`, `draft_policy_exception_email`); a per-group allowlist, Pydantic argument
-validation, arg-level policy in code, human approval for every write through LangGraph `interrupt()`,
-idempotency keys, step and cost budgets, an audit row for every decision; the workflow and the
-autonomous agent side by side on the same tools; tickets, approvals and audit in Postgres, under the
-same Row-Level Security as everything else.
+Planned (tools and agents were covered in an earlier course, so this session replaces them): the same
+Acme documents in two indexes, today's sections with a title header and small chunks that point to
+their parent section (parent-document retrieval); HyDE at query time; a scenario question set built so
+the techniques disagree (casual wording, an exact ticket id, a whole-section list, a chunk that loses
+its context, two documents, a question the documents can't answer); one scoreboard per scenario with
+Hit@1, MRR, LLM calls, latency and leaks; one answer-level check (correct, not only faithful). Every
+technique runs inside Part 2's access filter.
 
 ## 04-release: guardrails, evals, release (Part 4, Mon 16 Nov)
 
-Planned: a planted document with an indirect prompt injection; input, document and output guards plus
-an "unsolicited write" policy check; three eval suites (retrieval, safety, tool calls) behind
-`release.py` thresholds; kill switch, cost dashboard, Docker Compose, runbook.
+Planned: a planted document with an indirect prompt injection; input, document and output guards;
+two eval suites (retrieval from Part 3, and safety) behind `release.py` thresholds; kill switch, cost
+dashboard, Docker Compose, runbook.

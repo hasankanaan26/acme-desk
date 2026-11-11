@@ -44,6 +44,19 @@ and obeys the same rules on every turn, its own memory included.
   `RETRIEVAL_STRATEGY=dense | keyword | hybrid`; `GET /search?strategy=` compares them. On the golden
   set (Monday's documents, top 5): Hit@5 1.00 for meaning and hybrid, 0.96 for words alone; MRR 0.91
   for meaning, 0.94 for hybrid; zero leaks for all three.
+- **The lab's techniques, on Postgres.** The retrieval strategies from the RAG weeks' checkpoint 6
+  run here too, every one inside the same access filter (`app/rag/retriever.py`, `reranker.py`,
+  `router.py`): `rerank` and `hybrid_rerank` (top 20, re-ordered by the ms-marco-MiniLM cross-encoder,
+  ONNX on CPU), `hyde` and `multi_query` (LLM rewrites, cached in `runs/llm_cache.json`), and
+  `routed` (a "who works remotely?" question gets every matching Team Directory row the person may
+  read, through `store.records()`; anything else goes to `hybrid_rerank`). `bm25` is accepted as a
+  name for `keyword`. `GET /search` and `POST /query` take `?strategy=` and return a `trace` of
+  what the strategy did; the UI has the dropdown on both tabs. No model or no reranker degrades to
+  plain search with a line in the trace, never a 500. The lab's `parent` strategy is not here: its
+  child index would be written at query time, and `acme_app` cannot write chunks.
+  Demo, as the intern: "How many reviewers does a change to the billing code need?" `dense` →
+  Coding Standards ×3; `rerank` → Engineering Handbook #1. "Who works remotely?" `dense` → the
+  remote-work policy; `routed` → Maria Garcia, Michael Brown, Ahmed Hassan.
 - **Unchanged from Part 1:** the connectors, parsers, PII redaction, the chunker, the sync's decision
   ladder, blue/green indexes. Retrieval parity was checked: all 24 golden retrieval questions return
   the same top 5, in the same order, with the same distances, as Part 1's ChromaDB
@@ -135,7 +148,7 @@ step 2), then `sync.py --apply`. In that order: a seed after the events puts Fri
 | `app/routers/chat.py` | `/chat/threads`: list, start, read, ask (Server-Sent Events) |
 | `app/rag/store_pg.py`, `app/rag/retriever.py` | `keyword_search()` (full-text, inside the same filter) and `fuse()` (Reciprocal Rank Fusion) |
 | `app/prompts/chat_answer.py`, `standalone_question.py` | The chat's answer prompt; the follow-up rewrite |
-| `tests/` | 88 tests (and tonight's, skipped) against a throwaway `acme_test` database: sync, access, tenants, roles, sign-in, the worker, the chat, hybrid retrieval |
+| `tests/` | 111 tests (and tonight's, skipped) against a throwaway `acme_test` database: sync, access, tenants, roles, sign-in, the worker, the change gate, the chat, hybrid retrieval, the lab's strategies |
 
 Removed from Part 1, because they belonged to the RAG module's workbench: the compare, embed,
 visualize and store-inspect tabs, the naive ingest, and the in-process scheduler.

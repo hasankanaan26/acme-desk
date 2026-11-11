@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app import db
 from app.auth.deps import client_ip, csrf_guard, get_principal
 from app.auth.service import Principal, audit
+from app.config import RETRIEVAL_STRATEGIES, RETRIEVAL_STRATEGY
 from app.llm import call_llm, get_model_name
 from app.models import DocFilterInfo, QueryRequest, QueryResponse, SourceInfo
 from app.prompts.rag_answer import RAG_SYSTEM_PROMPT
@@ -41,6 +42,7 @@ logger = logging.getLogger("rag.query")
 router = APIRouter(prefix="/query", tags=["RAG Q&A"], dependencies=[Depends(csrf_guard)])
 
 DOC_FILTER_PATTERN = "^(auto|off|" + "|".join(DOC_TYPES) + ")$"
+STRATEGY_PATTERN = "^(bm25|" + "|".join(RETRIEVAL_STRATEGIES) + ")$"
 
 # The model is a dependency that WILL fail: no key, quota, an outage.
 # Retrieval already worked and the user may read every source, so answer
@@ -87,6 +89,9 @@ def query_rag(
     no_result_threshold: float | None = Query(default=None, description="Override no-result distance threshold."),
     doc_filter: str = Query(default="off", pattern=DOC_FILTER_PATTERN,
                             description="'auto' (LLM picks a doc type), 'off', or a doc type: " + ", ".join(DOC_TYPES)),
+    strategy: str | None = Query(default=None, pattern=STRATEGY_PATTERN,
+                                 description="How the sources are found: " + ", ".join(RETRIEVAL_STRATEGIES) +
+                                             ". Default: RETRIEVAL_STRATEGY in .env"),
     principal: Principal = Depends(get_principal),
 ):
     """Answer a question with RAG, as one user, optionally as of a past date."""
@@ -96,13 +101,13 @@ def query_rag(
         try:
             retrieval = retrieve_with_doc_filter(
                 query=request.question, group_ids=principal.group_ids, top_k=top_k, filter_mode=doc_filter,
-                no_result_threshold=no_result_threshold, as_of=as_of,
+                no_result_threshold=no_result_threshold, as_of=as_of, strategy=strategy,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         audit("query", user, user_id=principal.user_id, ip=client_ip(http),
               detail={"doc_ids": sorted({c["doc_id"] for c in retrieval["chunks"]}), "as_of": as_of,
-                      "request_id": request_id})
+                      "request_id": request_id, "strategy": strategy or RETRIEVAL_STRATEGY})
 
     chunks = retrieval["chunks"]
     logger.info("req_%s | user=%s groups=%s as_of=%s | %d chunks | docs=%s", request_id, user, groups,
@@ -121,6 +126,7 @@ def query_rag(
             question=request.question, answer=NO_RESULT_ANSWER, model=get_model_name(),
             user=user, as_of=as_of, sources=[], chunks_used=0, confidence="none",
             no_result=True, request_id=request_id, doc_filter=filter_info,
+            strategy=strategy or RETRIEVAL_STRATEGY, trace=retrieval["trace"],
         )
 
     confidence = score_confidence(chunks, high_threshold=high_threshold, low_threshold=low_threshold)
@@ -146,4 +152,6 @@ def query_rag(
         request_id=request_id,
         doc_filter=filter_info,
         llm_available=llm_available,
+        strategy=strategy or RETRIEVAL_STRATEGY,
+        trace=retrieval["trace"],
     )
