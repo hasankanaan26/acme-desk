@@ -2,6 +2,11 @@
 
 Fill in the start time before sending.
 
+> Sent Sunday 8 Nov. The plan changed on 11 Nov: Part 2 became retrieval techniques, and Part 3
+> (Fri 13 Nov) is "which search wins, and how you prove it" (two indexes, parent-document, HyDE and
+> a scoreboard), because tools and agents were covered in an earlier course. The message below is
+> what went out; the README and CHECKPOINTS.md have the current plan.
+
 ---
 
 Subject: Monday's plan and the last four sessions

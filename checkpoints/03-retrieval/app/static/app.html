@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acme Desk · Part 2: the platform</title>
+    <link rel="stylesheet" href="/static/ui.css">
+</head>
+<body>
+<!-- ============================================================
+     Acme Desk — Part 2. Every tab calls the API; the API checks the
+     session on every call. There is no "Ask as" any more: you are
+     who you signed in as. The Admin tabs appear only for a tenant
+     admin, and the API refuses them to anyone else anyway.
+     All logic lives in /static/app.js.
+     ============================================================ -->
+
+<header class="topbar">
+    <div class="brand">
+        <h1>Acme Desk</h1>
+        <p id="tenantName">Part 2: the platform</p>
+    </div>
+    <div class="who">
+        <label>As of
+            <input type="date" id="asOf" title="Empty = today's documents">
+        </label>
+    </div>
+    <div class="status" id="status">
+        <span class="chip">Connecting…</span>
+    </div>
+</header>
+
+<div class="layout">
+    <nav class="tabs" id="tabs">
+        <p class="tab-group">Answer</p>
+        <a href="#chat" data-tab="chat">Chat</a>
+        <a href="#query" data-tab="query">Ask</a>
+        <a href="#search" data-tab="search">Search</a>
+        <p class="tab-group">Library</p>
+        <a href="#documents" data-tab="documents">Documents</a>
+        <a href="#account" data-tab="account">My account</a>
+        <p class="tab-group admin-only" hidden>Admin</p>
+        <a href="#sync" data-tab="sync" class="admin-only" hidden>Sync</a>
+        <a href="#people" data-tab="people" class="admin-only" hidden>People</a>
+        <a href="#access" data-tab="access" class="admin-only" hidden>Document access</a>
+        <a href="#audit" data-tab="audit" class="admin-only" hidden>Audit log</a>
+    </nav>
+
+    <main>
+        <!-- ---------- Chat: /chat/threads, streamed ---------- -->
+        <section data-panel="chat">
+            <h2>Chat</h2>
+            <p class="hint">A conversation that remembers. Every turn searches only what <b>you</b> may read today, and an earlier answer built on a document you have lost is hidden. The steps and the tokens stream in as they happen. <code>POST /chat/threads/{id}/messages</code></p>
+            <div class="chat">
+                <aside class="chat-threads">
+                    <button type="button" id="newChat">New conversation</button>
+                    <ul id="threadList"></ul>
+                </aside>
+                <div class="chat-main">
+                    <div class="chat-log" id="chatLog"></div>
+                    <form class="ask-row" id="chatForm">
+                        <input type="text" id="chatInput" placeholder="Ask about Acme Corp policies…" autocomplete="off" required maxlength="2000">
+                        <button type="submit">Send</button>
+                    </form>
+                    <div class="samples" data-target="chatInput">
+                        <span>What is the salary range for a Senior Developer?</span>
+                        <span>And for a junior?</span>
+                        <span>How much can I spend per person on a team dinner?</span>
+                        <span>And for a client dinner?</span>
+                        <span>How many unused vacation days can I roll over?</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ---------- Ask: POST /query ---------- -->
+        <section data-panel="query">
+            <h2>Ask</h2>
+            <p class="hint">Answers only from the documents <b>you</b> may read, as of the date in the top bar. <code>POST /query</code></p>
+            <form class="ask-row" id="queryForm">
+                <input type="text" id="queryQuestion" placeholder="Ask about Acme Corp policies…" autocomplete="off" required maxlength="2000">
+                <button type="submit">Ask</button>
+            </form>
+            <div class="samples" data-target="queryQuestion">
+                <span>What is the salary range for a Senior Developer?</span>
+                <span>How many unused vacation days can I roll over?</span>
+                <span>How many backend developers are we hiring?</span>
+                <span>How much can I spend per person on a team dinner?</span>
+                <span>I got an email asking me to re-confirm my expense reimbursement. Is that legit?</span>
+                <span>Which vector database does Acme run in production?</span>
+            </div>
+            <details class="options">
+                <summary>Options</summary>
+                <div class="option-grid">
+                    <label>Doc type filter
+                        <select id="queryDocFilter">
+                            <option value="off">off: search all documents</option>
+                            <option value="auto">auto: LLM picks the doc type</option>
+                        </select>
+                    </label>
+                    <label>Chunks to retrieve (top_k)
+                        <input type="number" id="queryTopK" min="1" max="20" value="3">
+                    </label>
+                    <label>Retrieval strategy
+                        <select id="queryStrategy">
+                            <option value="">.env default</option>
+                            <option value="dense">dense: by meaning (pgvector)</option>
+                            <option value="keyword">keyword: by words (full-text)</option>
+                            <option value="hybrid">hybrid: both, fused</option>
+                            <option value="rerank">rerank: dense top 20 + cross-encoder</option>
+                            <option value="hybrid_rerank">hybrid_rerank: hybrid top 20 + cross-encoder</option>
+                            <option value="small">small: the small chunks (Part 3)</option>
+                            <option value="parent">parent: small chunks find, sections return</option>
+                            <option value="hyde">hyde: search with an LLM-written answer</option>
+                            <option value="multi_query">multi_query: 3 LLM rewrites, fused</option>
+                            <option value="routed">routed: lists go to the directory</option>
+                        </select>
+                    </label>
+                    <label>Prompt style
+                        <select id="queryPromptStyle">
+                            <option value="default">default: strict grounding</option>
+                            <option value="minimal">minimal: loose, may hallucinate</option>
+                        </select>
+                    </label>
+                </div>
+            </details>
+            <div class="output" id="queryOutput"></div>
+        </section>
+
+        <!-- ---------- Search: GET /search ---------- -->
+        <section data-panel="search">
+            <h2>Search</h2>
+            <p class="hint">Retrieval only, no LLM: the closest chunks among the documents you may read. Each result says whether it was found by its meaning, its words, or both. <code>GET /search</code></p>
+            <form class="ask-row" id="searchForm">
+                <input type="text" id="searchQuery" placeholder="Search the knowledge base…" autocomplete="off" required maxlength="1000">
+                <input type="number" id="searchTopK" min="1" max="20" value="5" title="top_k" class="narrow">
+                <select id="searchStrategy" title="How the search ranks" class="auto">
+                    <option value="">.env default</option>
+<option value="dense">dense: by meaning (pgvector)</option>
+                    <option value="keyword">keyword: by words (full-text)</option>
+                    <option value="hybrid">hybrid: both, fused</option>
+                    <option value="rerank">rerank: dense top 20 + cross-encoder</option>
+                    <option value="hybrid_rerank">hybrid_rerank: hybrid top 20 + cross-encoder</option>
+                            <option value="small">small: the small chunks (Part 3)</option>
+                            <option value="parent">parent: small chunks find, sections return</option>
+                    <option value="hyde">hyde: search with an LLM-written answer</option>
+                    <option value="multi_query">multi_query: 3 LLM rewrites, fused</option>
+                    <option value="routed">routed: lists go to the directory</option>
+                </select>
+                <button type="submit">Search</button>
+            </form>
+            <div class="samples" data-target="searchQuery">
+                <span>salary range senior developer</span>
+                <span>hire backend developers</span>
+                <span>parental leave</span>
+                <span>working from abroad</span>
+            </div>
+            <div class="output" id="searchOutput"></div>
+        </section>
+
+        <!-- ---------- Documents: GET /documents ---------- -->
+        <section data-panel="documents">
+            <h2>Documents</h2>
+            <p class="hint" id="documentsHint">The documents you may read, and how many chunks the live index holds for each. <code>GET /documents</code></p>
+            <div class="output" id="documentsOutput"></div>
+        </section>
+
+        <!-- ---------- My account: GET /auth/me, POST /auth/password ---------- -->
+        <section data-panel="account">
+            <h2>My account</h2>
+            <p class="hint">Who the server thinks you are. Your groups decide what you can read; only a tenant admin can change them. <code>GET /auth/me</code></p>
+            <div class="card" id="accountCard"></div>
+            <div class="card">
+                <h3>Change your password</h3>
+                <p class="muted">At least 12 characters. Every other session of yours is signed out. <code>POST /auth/password</code></p>
+                <form id="passwordForm">
+                    <input type="password" id="currentPassword" placeholder="Current password" autocomplete="current-password" required>
+                    <input type="password" id="newPassword" placeholder="New password (12+ characters)" autocomplete="new-password" minlength="12" required>
+                    <button type="submit">Change password</button>
+                </form>
+                <div id="passwordOutput"></div>
+            </div>
+            <button type="button" id="signOut" class="secondary">Sign out</button>
+        </section>
+
+        <!-- ---------- Admin: Sync ---------- -->
+        <section data-panel="sync">
+            <h2>Sync</h2>
+            <p class="hint">The worker (<code>python worker.py</code>) keeps the index true to the documents. The API cannot sync: it can only read what the worker wrote, and ask it to run. <code>GET /sync/status</code> · <code>GET /sync/runs</code></p>
+            <div class="card scheduler" id="schedulerCard">
+                <h3>The worker</h3>
+                <div class="scheduler-state"><span class="muted">Loading…</span></div>
+                <div class="scheduler-last"></div>
+                <div class="event-row" id="schedulerButtons">
+                    <button type="button" data-sched="now">Run now</button>
+                    <button type="button" data-sched="pause" id="schedPause">Pause</button>
+                    <button type="button" data-sched="resume" id="schedResume">Resume</button>
+                </div>
+            </div>
+            <div class="card scheduler" id="gateCard">
+                <h3>The change gate</h3>
+                <div class="scheduler-state"><span class="muted">Loading…</span></div>
+                <div class="scheduler-last"></div>
+                <p class="meta">Before a scheduled tick, the worker asks Drive's change log what moved since its bookmark. Nothing in Drive and nothing in the register: the tick is skipped, no folder is walked. Run now always syncs. <code>app/ingest/gate.py</code></p>
+            </div>
+            <div class="output" id="syncOutput"></div>
+            <div class="card">
+                <h3>Recent runs</h3>
+                <div class="scroll-x" id="runsOutput"></div>
+            </div>
+        </section>
+
+        <!-- ---------- Admin: People ---------- -->
+        <section data-panel="people">
+            <h2>People</h2>
+            <p class="hint">Who belongs to this tenant, their role and their groups. A group change is live on that person's next question. <code>/admin/users</code> · <code>/admin/groups</code></p>
+            <div class="card">
+                <h3>Add a person</h3>
+                <form id="addUserForm" class="option-grid">
+                    <label>Email <input type="email" id="newEmail" required></label>
+                    <label>Name <input type="text" id="newName" required maxlength="120"></label>
+                    <label>Temporary password <input type="text" id="newUserPassword" minlength="12" required
+                                                     title="At least 12 characters. Tell them to change it in My account."></label>
+                    <label>Role
+                        <select id="newRole"><option value="member">member</option><option value="admin">admin</option></select>
+                    </label>
+                    <div class="group-picker" id="newGroups"></div>
+                    <button type="submit">Add</button>
+                </form>
+                <div id="addUserOutput"></div>
+            </div>
+            <div class="card">
+                <h3>Members</h3>
+                <div class="scroll-x" id="peopleOutput"></div>
+            </div>
+            <div class="card">
+                <h3>Groups</h3>
+                <form id="addGroupForm" class="ask-row">
+                    <input type="text" id="newGroupName" placeholder="new-group-name" pattern="[a-z0-9-]{1,40}" required>
+                    <input type="text" id="newGroupDescription" placeholder="What is it for?" maxlength="200">
+                    <button type="submit">Create group</button>
+                </form>
+                <div class="scroll-x" id="groupsOutput"></div>
+            </div>
+        </section>
+
+        <!-- ---------- Admin: Document access ---------- -->
+        <section data-panel="access">
+            <h2>Document access</h2>
+            <p class="hint">Which groups may read each document. Saving is live: the next question already obeys it, with no sync and no re-embedding. A <b>status</b> change reaches the index on the worker's next sync. <code>PATCH /admin/documents/{doc_id}</code></p>
+            <div class="scroll-x" id="accessOutput"></div>
+        </section>
+
+        <!-- ---------- Admin: Audit ---------- -->
+        <section data-panel="audit">
+            <h2>Audit log</h2>
+            <p class="hint">Sign-ins, searches (which documents came back, not their text), admin changes, syncs. <code>GET /admin/audit</code></p>
+            <form class="ask-row" id="auditForm">
+                <select id="auditAction">
+                    <option value="">everything</option>
+                    <option value="auth">sign-ins</option>
+                    <option value="search">searches</option>
+                    <option value="query">questions</option>
+                    <option value="admin">admin changes</option>
+                    <option value="sync">syncs</option>
+                </select>
+                <button type="submit">Refresh</button>
+            </form>
+            <div class="scroll-x" id="auditOutput"></div>
+        </section>
+    </main>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

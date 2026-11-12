@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acme Desk · Sign in</title>
+    <link rel="stylesheet" href="/static/ui.css">
+</head>
+<body class="login-page">
+<!-- ============================================================
+     Sign in: email + password -> POST /auth/login -> session cookie
+     ============================================================
+     The cookie is HttpOnly, so this page never sees it: JavaScript
+     only learns "it worked" and moves on to /ui. Accounts are made by
+     a tenant admin in the People tab, or by `python db.py seed`.
+     ============================================================ -->
+<main class="login-card card">
+    <h1>Acme Desk</h1>
+    <p class="muted">Sign in with your work account.</p>
+    <form id="loginForm">
+        <label>Email
+            <input type="email" id="email" autocomplete="username" required autofocus>
+        </label>
+        <label>Password
+            <input type="password" id="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">Sign in</button>
+    </form>
+    <div id="loginError"></div>
+</main>
+<script>
+document.getElementById("loginForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = event.target.querySelector("button");
+    const error = document.getElementById("loginError");
+    button.disabled = true;
+    error.textContent = "";
+    try {
+        const response = await fetch("/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Acme-Request": "1" },
+            body: JSON.stringify({
+                email: document.getElementById("email").value,
+                password: document.getElementById("password").value,
+            }),
+        });
+        if (response.ok) {
+            location.href = "/ui";
+            return;
+        }
+        const body = await response.json().catch(() => ({}));
+        const banner = document.createElement("div");
+        banner.className = "banner banner-error";
+        banner.textContent = body.detail || ("Sign-in failed (" + response.status + ")");
+        error.replaceChildren(banner);
+    } catch (err) {
+        error.textContent = "The server is not reachable.";
+    } finally {
+        button.disabled = false;
+    }
+});
+// Already signed in? Go straight to the app.
+fetch("/auth/me").then(r => { if (r.ok) location.href = "/ui"; });
+</script>
+</body>
+</html>

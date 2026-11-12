@@ -29,7 +29,7 @@ Minimum viable Monday: the environment proven, 01-source in local mode with the 
 | Window | Must | Should | Could |
 |---|---|---|---|
 | Mon night + Tue (02) | **Built on 7 Nov (branch `part2-platform`):** Postgres + pgvector, sign-in, live access, RLS, roles, worker, admin pages, 76 tests. Left: rehearse the demo, run sheet `part2.md`, `p2.js` | the chat block: `DeskState` + nodes + `workflow.py`, Postgres checkpointer, `/chat` + SSE, hybrid (pgvector + full-text) | thread list, trace panel |
-| Wed night + Thu (03) | `registry.py`, `policy.py`, `backend_local.py`, `audit.py`, workflow `plan / check_policy / await_approval / execute`, `/approvals`, approval card, `test_policy`, `test_approval_resume`, `test_idempotency`, run sheet, `p3.js` | `agent.py`, `agent_unbounded.py` | approvals page |
+| Wed night + Thu (03) | **Re-planned 11 Nov (tools were covered in an earlier course):** `checkpoints/03-retrieval`: small chunks written by the sync (`006_small_chunks.sql`, `app/rag/children.py`), `small` and `parent` strategies, `golden_scenarios.json`, `scoreboard.py`, `answers.py`, tests; run sheet `part3.md`, teaching guide, `p3.js` | real numbers with the class embeddings and model; fallback screens | the regression drill on the slide |
 | Fri night + Sat/Sun (04) | planted doc + Drive upload, three guards + `tool_policy_check`, `golden_tools.json` + `tool_evals.py`, `evaluate.py`, `release.py` + thresholds, kill switch, one-page runbook, run sheet, `p4.js`, fallbacks | `dashboard.py`, compose tested, `chaos.md` | judge calibration table |
 
 ## 20 minutes before every class

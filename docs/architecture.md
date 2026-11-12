@@ -24,8 +24,11 @@ you would expect.
    conversation)               Principal; hybrid retrieval (pgvector + full-text);
                                memory in Postgres, visible only to its owner
         ▼
-  tools                        allowlist by group → argument validation → policy   ← Part 3
-  (the only writes)            in code → human approval → idempotency key → audit
+  retrieval                    every document cut twice: sections, and small       ← Part 3
+  (inside the access filter)   chunks pointing to them, written by the same sync;
+                               dense, keyword, hybrid, rerank, small, parent,
+                               HyDE, multi-query, routed; one scoreboard per kind
+                               of question, with leaks counted for every technique
         ▼
   guards and the gate          input, document and output guards; three eval       ← Part 4
                                suites behind thresholds; kill switch; dashboard
@@ -41,8 +44,8 @@ you would expect.
 | API → database | nothing: the API's role (`acme_app`) cannot write the index, and every transaction is pinned to one tenant by Row-Level Security | a missing `WHERE tenant_id` in Python (the database adds it) |
 | Worker → database | the worker's role (`acme_sync`) may write the index | the worker reading people, passwords, sessions or groups (no grant) |
 | Index → model | nothing. Retrieved chunks are wrapped as untrusted documents | instructions found inside documents (Part 4 drops flagged chunks) |
-| Model → tools | the model's *proposal* of a tool and its arguments | the proposal itself: the allowlist, the schema, the policy and a human decide whether it runs |
-| Tools → model | the tool's result, as data | instructions in tool results |
+| Retrieval technique → model | the technique's ranking of what this person may read | the technique deciding what may be read: every one searches inside the access filter, and `parent` re-checks it when it fetches the sections its small chunks point to |
+| HyDE's rewrite → search | a model-written guess, used only as a search query | the guess as a source: it is never shown or quoted, only searched with |
 
 ## Where state lives
 
@@ -56,13 +59,15 @@ you would expect.
 | sync runs | Part 1: `runs/sync-*.json` and process memory. Part 2: `sync_runs`, `sync_requests`, `workers` | the worker |
 | sessions, sign-in attempts, audit | Part 2: `sessions`, `login_attempts`, `audit_log` | the API |
 | conversations (Part 2) | `chat_threads` (one row per conversation, visible only to its owner) and LangGraph's checkpoint tables, whose rows are visible only through a thread you own | the person who started it |
-| approvals, audit, tickets (Part 3) | Postgres tables, under the same Row-Level Security | the tools layer |
+| small chunks (Part 3) | the `chunks` table, `parent_id` = their section (a foreign key), written in the same transaction as the sections | the sync job |
+| scoreboards (Part 3) | `runs/scoreboard-*.json`, and the frozen `runs/scoreboard-baseline.json` that Part 4's release gate compares against | `scoreboard.py` |
 
 ## Why these choices
 
 - Plain functions for ingestion, LangGraph only for the graph and the checkpointer. The controls that
-  matter (who may read, which tool may run, who approved) are plain code you can read and test; the
-  framework only decides which node runs next and remembers where a paused run stopped.
+  matter (who may read, which version is in force, what a retrieval technique may return) are plain
+  code you can read and test; the
+  framework only decides which node runs next and remembers the conversation.
 - A register instead of trusting file contents. Permissions, status and dates are facts about a
   document that live in the source system; the text of the file cannot be trusted to carry them.
 - Filters inside the query, never after it. A top-k search that is filtered afterwards leaks through

@@ -61,13 +61,26 @@ no information, and the earlier answer is hidden → the same thread as `hr-part
 
 ## 03-retrieval: which search wins, and how you prove it (Part 3, Fri 13 Nov)
 
-Planned (tools and agents were covered in an earlier course, so this session replaces them): the same
-Acme documents in two indexes, today's sections with a title header and small chunks that point to
-their parent section (parent-document retrieval); HyDE at query time; a scenario question set built so
-the techniques disagree (casual wording, an exact ticket id, a whole-section list, a chunk that loses
-its context, two documents, a question the documents can't answer); one scoreboard per scenario with
-Hit@1, MRR, LLM calls, latency and leaks; one answer-level check (correct, not only faithful). Every
-technique runs inside Part 2's access filter.
+Replaces the tools session (tools and agents were covered in an earlier course).
+
+Adds: the second cut of every document, small chunks of whole sentences (`CHILD_MAX_CHARS`, 220)
+with a `parent_id` to their section, written by the same sync in the same transaction
+(`006_small_chunks.sql`, `app/rag/children.py`); `small` and `parent` strategies (`parent` fetches
+the sections through the access filter again, `store.by_ids`); the scenario set
+(`shared/golden/golden_scenarios.json`: 28 questions in 7 kinds, each with the words the context
+needs and the facts a correct answer says); `scoreboard.py` (Hit@1, Hit@5, MRR, doc@5, LLM calls,
+ms and leaks, one table per scenario, a winner per scenario, `--save-baseline` /
+`--against-baseline`); `answers.py` (correct, retrieval miss, generation miss, made it up); every
+chunk records how it was cut, so a new cut reaches every document. 157 tests.
+
+Demo flow: `scoreboard.py` → no technique wins every table, and the average points at a different
+winner → Search tab, "What do I need to do in my first week?" with `small` (fragments) and `parent`
+(the whole week-1 section, "Matched by the small chunk") → why `parent` still wins nothing here (50 of
+89 sections fit in one small chunk) → "How many days of unused vacation can I carry over now?": every
+technique ranks the FAQ's stale "5 days" first, and `answers.py` shows the faithful, wrong answer.
+
+Unchanged: everything in 02-platform; the section searches never see a small chunk, so Part 2's
+numbers don't move.
 
 ## 04-release: guardrails, evals, release (Part 4, Mon 16 Nov)
 
