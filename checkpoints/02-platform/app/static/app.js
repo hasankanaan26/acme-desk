@@ -192,8 +192,7 @@ function traceBlock(strategy, trace, ms) {
     if (!trace || !trace.length) return "";
     const timing = ms ? " · " + Math.round(ms) + " ms" : "";
     return '<p class="meta">Strategy <code>' + escapeHtml(strategy || "") + "</code>" + timing + "</p><pre>" +
-        trace.map(escapeHtml).join("
-") + "</pre>";
+        trace.map(escapeHtml).join("\n") + "</pre>";
 }
 
 function chunkRow(title, text, distance, link, found) {

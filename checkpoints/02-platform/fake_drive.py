@@ -20,7 +20,9 @@ Run from anywhere: paths are resolved from the repository root.
 """
 
 import json
+import os
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -63,10 +65,20 @@ def push_register(register: dict) -> None:
         print("  (no tenant reads this folder; the register stayed in the folder only)")
 
 
+def _writable(func, path, _exc):
+    """rmtree's error handler: clear a read-only flag (Windows, OneDrive folders) and try again."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def reset() -> None:
     if SOURCE_DIR.exists():
-        shutil.rmtree(SOURCE_DIR)
-    shutil.copytree(SEED_DIR / "sites", SOURCE_DIR)
+        shutil.rmtree(SOURCE_DIR, onerror=_writable)
+    # copy_function only: a repo inside OneDrive has read-only folders, and
+    # copying their flags would make the next reset unable to delete them.
+    shutil.copytree(SEED_DIR / "sites", SOURCE_DIR, copy_function=shutil.copyfile)
+    for folder in [SOURCE_DIR, *SOURCE_DIR.rglob("*")]:
+        os.chmod(folder, stat.S_IWRITE | stat.S_IREAD | (stat.S_IEXEC if folder.is_dir() else 0))
     shutil.copy(SEED_DIR / "register.json", SOURCE_DIR / REGISTER_FILENAME)
     STATE_FILE.write_text("[]")
     files = [p for p in SOURCE_DIR.rglob("*") if p.is_file() and not p.name.startswith((".", "_"))]
