@@ -115,8 +115,8 @@ What to read in it:
 Rows that need what this laptop didn't have on 12 Nov (a corporate network blocks the Hugging Face
 download, and there was no model key): `rerank`, `hybrid_rerank` and `routed` (the cross-encoder),
 `hyde` and `multi_query` (a model), and `answers.py`. Without them the scoreboard runs them anyway,
-stars them and keeps them out of the winners. The class run with Azure embeddings and
-`gpt-4.1-mini` is in `instructor-notes/part3.md`.
+stars them and keeps them out of the winners. The class run used Azure embeddings and
+`gpt-4.1-mini`.
 
 ## What's new in this checkpoint
 

@@ -49,8 +49,7 @@ shared/data/           Acme's documents (20 files, 7 sites), the register, the i
                        (from Part 2 the register and identities are only what db.py seeds Postgres from)
 shared/golden/         the golden sets the evaluations run on
 docs/                  drive-setup.md, sharepoint-mapping.md, architecture, runbook (Part 4)
-instructor-notes/      run sheets, fallbacks, the weekend plan
-slides/                the decks and their source (slides/src, PptxGenJS)
+slides/                the decks (.pptx) for each part
 ```
 
 ## Code style
