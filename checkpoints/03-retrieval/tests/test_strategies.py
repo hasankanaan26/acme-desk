@@ -113,7 +113,7 @@ def test_routed_only_reads_a_directory_you_may_read(synced, client):
     intern, admin = sign_in(client(), "intern@acme.test"), sign_in(client(), "admin@acme.test")
     admin.patch("/admin/documents/PEOPLE-DIRECTORY", json={"allowed_groups": ["hr"]}, headers=W)
     data = search(intern, "Who works remotely?", "routed")
-    assert data["trace"][0] == "route: pointwise"         # no rows to look up, so a normal search
+    assert data["trace"][0].startswith("route: pointwise")  # no directory to look up, so a normal search
     assert "PEOPLE-DIRECTORY" not in {r["doc_id"] for r in data["results"]}
 
 

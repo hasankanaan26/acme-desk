@@ -1,0 +1,44 @@
+{
+  "about": "Route labels for the `routed` strategy's router (Part 3): for each question, the shape a person would give it, and for an aggregation the exact directory filters. Written before either router ran on them. Some are the regular expressions' known failures, on purpose: lists they miss (no who/list/how many), and passages they turn into lists (a who/office/team word plus a directory value). route_eval.py scores the rules and the model side by side; tests/test_router_llm.py lints every filter value against its record set. R24-R31 are the helpdesk tickets (source IT-HELPDESK-EXPORT): R24 says 'open' as a verb (who reported them), R26 as a status; R31 counts by a topic no column stores.",
+  "routes": {
+    "aggregation": "every person matching office / department / role: a lookup, every match",
+    "pointwise": "the answer is in a passage: search",
+    "aggregation_unindexed": "every person matching something the directory doesn't store: search, and log it"
+  },
+  "questions": [
+    {"id": "R01", "question": "Who works remotely?", "route": "aggregation", "filters": {"office": ["Remote"]}},
+    {"id": "R02", "question": "Who works in the San Francisco office?", "route": "aggregation", "filters": {"office": ["San Francisco"]}},
+    {"id": "R03", "question": "How many people are based in New York?", "route": "aggregation", "filters": {"office": ["New York"]}},
+    {"id": "R04", "question": "Give me the people in New York", "route": "aggregation", "filters": {"office": ["New York"]}},
+    {"id": "R05", "question": "Show me all remote staff", "route": "aggregation", "filters": {"office": ["Remote"]}},
+    {"id": "R06", "question": "Which people in Engineering work from NYC?", "route": "aggregation", "filters": {"department": ["Engineering"], "office": ["New York"]}},
+    {"id": "R07", "question": "List the product managers", "route": "aggregation", "filters": {"role": ["Product Manager"]}},
+    {"id": "R08", "question": "Who are our security engineers?", "route": "aggregation", "filters": {"role": ["Security Engineer"]}},
+    {"id": "R09", "question": "Who is in Human Resources?", "route": "aggregation", "filters": {"department": ["Human Resources"]}},
+    {"id": "R10", "question": "List everyone in the Design department", "route": "aggregation", "filters": {"department": ["Design"]}},
+
+    {"id": "R11", "question": "I'm locked out of my laptop. Who do I ring?", "route": "pointwise"},
+    {"id": "R12", "question": "Who do I talk to on the Engineering team about a deploy?", "route": "pointwise"},
+    {"id": "R13", "question": "How many vacation days do I get?", "route": "pointwise"},
+    {"id": "R14", "question": "How many people did Engineering have at the end of Q3?", "route": "pointwise"},
+    {"id": "R15", "question": "What is Maria Garcia's email?", "route": "pointwise"},
+    {"id": "R16", "question": "Who approves expense reports?", "route": "pointwise"},
+    {"id": "R17", "question": "Which team owns the billing API?", "route": "pointwise"},
+    {"id": "R18", "question": "How many days a week do people who work remotely need to be in the office?", "route": "pointwise"},
+    {"id": "R19", "question": "Can anyone in the New York office expense a parking spot?", "route": "pointwise"},
+    {"id": "R20", "question": "What should I wear when I go and see a customer?", "route": "pointwise"},
+
+    {"id": "R21", "question": "Who speaks Spanish?", "route": "aggregation_unindexed"},
+    {"id": "R22", "question": "Who joined the company this year?", "route": "aggregation_unindexed"},
+    {"id": "R23", "question": "Who in the New York office has a parking permit?", "route": "aggregation_unindexed"},
+
+    {"id": "R24", "question": "How many tickets did Maria Garcia open?", "route": "aggregation", "source": "IT-HELPDESK-EXPORT", "filters": {"reporter": ["Maria Garcia"]}},
+    {"id": "R25", "question": "Which tickets did James Wilson report?", "route": "aggregation", "source": "IT-HELPDESK-EXPORT", "filters": {"reporter": ["James Wilson"]}},
+    {"id": "R26", "question": "How many tickets are still open?", "route": "aggregation", "source": "IT-HELPDESK-EXPORT", "filters": {"status": ["open"]}},
+    {"id": "R27", "question": "How many tickets have been resolved?", "route": "aggregation", "source": "IT-HELPDESK-EXPORT", "filters": {"status": ["resolved"]}},
+    {"id": "R28", "question": "Which tickets are disputed?", "route": "aggregation", "source": "IT-HELPDESK-EXPORT", "filters": {"status": ["disputed"]}},
+    {"id": "R29", "question": "Which of Maria Garcia's tickets are still open?", "route": "aggregation", "source": "IT-HELPDESK-EXPORT", "filters": {"reporter": ["Maria Garcia"], "status": ["open"]}},
+    {"id": "R30", "question": "What did IT do about ticket IT-4120?", "route": "pointwise"},
+    {"id": "R31", "question": "How many VPN tickets were there?", "route": "aggregation_unindexed"}
+  ]
+}

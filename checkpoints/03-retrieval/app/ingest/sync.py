@@ -67,7 +67,7 @@ from app.ingest.register import (
     load_register,
     register_warnings,
 )
-from app.rag import catalog, store
+from app.rag import catalog, router, store
 from app.rag.children import small_chunks
 from app.rag.chunker import chunk_sections
 from app.rag.embedder import embed_texts, embedding_model_id, estimate_tokens, get_provider
@@ -174,7 +174,11 @@ def redact_sections(sections: list[Section]) -> tuple[list[Section], dict]:
         for counts in (c1, c2):
             for k, v in counts.items():
                 totals[k] = totals.get(k, 0) + v
-        cleaned.append(Section(heading, text))
+        # A record's fields hold the same values as its text: redact them the
+        # same way, or a lookup would hand back the phone number the text hid.
+        # (Not counted again: the text's count already has them.)
+        fields = {k: redact(v, CORPORATE_EMAIL_DOMAINS)[0] for k, v in s.fields.items()} if s.fields else None
+        cleaned.append(Section(heading, text, fields))
     return cleaned, totals
 
 
@@ -235,6 +239,9 @@ def build_plan(connector: Connector, collection: str | None, full: bool = False)
             warnings.append(f"{entry.doc_id}: {parsed.note}")
 
         sections, pii = redact_sections(parsed.sections)
+        # A record set with fixed values (router.ROUTABLE): a row off the list
+        # stays searchable, but no lookup will ever count it. Say so here.
+        warnings.extend(router.off_list_values(entry.doc_id, [s.fields for s in sections]))
         pieces = chunk_sections(sections, entry.title, SECTION_MAX_CHARS)
         chash = content_hash(pieces)
         chunks = [{
@@ -250,6 +257,7 @@ def build_plan(connector: Connector, collection: str | None, full: bool = False)
                 "pipeline": pipeline_id(),
                 "pii_redactions": sum(pii.values()),
             },
+            "fields": p.get("fields"),   # a CSV row's columns (Part 3, 007), else None
         } for p in pieces]
         # Part 3: the same sections, cut again into small chunks that
         # point back to them. Derived from `chunks`, so they change

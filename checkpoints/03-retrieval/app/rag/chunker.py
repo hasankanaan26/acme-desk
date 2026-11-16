@@ -158,11 +158,14 @@ def chunk_sections(sections: list, title: str, max_chars: int = 900) -> list[dic
     """Turn parsed sections into chunk dicts: {"text", "section", "chunk_index"}."""
     chunks = []
     for section in sections:
-        for piece in _split_long(section.text, max_chars):
+        fields = getattr(section, "fields", None)   # a record (CSV row): Part 3
+        for n, piece in enumerate(_split_long(section.text, max_chars)):
             chunks.append({
                 "text": f"{title} > {section.heading}\n{piece}",
                 "section": section.heading,
                 "chunk_index": len(chunks),
+                # A record is listed once: its fields go on its first piece only.
+                **({"fields": fields} if fields and n == 0 else {}),
             })
     return chunks
 

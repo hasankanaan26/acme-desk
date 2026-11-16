@@ -36,6 +36,9 @@ langgraph>=1.2,<2
 langgraph-checkpoint-sqlite>=3.1,<4
 langgraph-checkpoint-postgres>=3.2,<4   # checkpoint 02: the chat's memory in Postgres
 
+# --- Guardrails (checkpoint 03): NeMo Guardrails input rails, the Guardrails tab ---
+nemoguardrails==0.24.1     # pulls fastembed, which pins huggingface_hub<2 (fine for tokenizers and the reranker)
+
 # --- Web ---
 fastapi>=0.115,<1
 uvicorn[standard]>=0.34

@@ -101,6 +101,7 @@ class QueryResponse(BaseModel):
     llm_available: bool = True        # False: no written answer (no key, quota, outage); sources still shown
     strategy: str = ""                # how the sources were found (see /search)
     trace: list[str] = []
+    guardrails: dict | None = None    # the input rails' verdict (app/guardrails.py); checked=False when off
 
 
 class SyncDocAction(BaseModel):
@@ -178,6 +179,10 @@ class SchedulerStatus(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(max_length=256)
+
+
+class SwitchRequest(BaseModel):
+    email: str = Field(max_length=320)
 
 
 class TenantInfo(BaseModel):

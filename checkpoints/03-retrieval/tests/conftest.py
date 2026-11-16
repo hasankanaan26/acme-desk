@@ -64,8 +64,10 @@ os.environ["EMBED_RETRY_BASE_SECONDS"] = "0"
 os.environ["SYNC_INTERVAL_SECONDS"] = "0"
 os.environ["ACME_SEED_PASSWORD"] = PASSWORD
 os.environ["ACME_AUTO_SIGNIN_EMAIL"] = ""      # sign-in always on in tests, whatever .env says
+os.environ["ACME_ROLE_SWITCHER"] = "false"     # off unless a test turns it on
 os.environ["RETRIEVAL_STRATEGY"] = "hybrid"    # the tests' default, whatever .env says
 os.environ["RERANKER"] = "fake"                # shared-word count: no model download in tests
+os.environ["ROUTER"] = "llm"                   # routed asks a model (none here: the rules decide, or a fake)
 # No paid API, ever: blank every model key, whatever .env holds. (load_dotenv
 # never overrides a variable that is already set, even to "".)
 for key in ("GEMINI_API_KEY", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT"):

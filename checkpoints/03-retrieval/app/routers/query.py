@@ -26,7 +26,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app import db
+from app import db, guardrails
 from app.auth.deps import client_ip, csrf_guard, get_principal
 from app.auth.service import Principal, audit
 from app.config import RETRIEVAL_STRATEGIES, RETRIEVAL_STRATEGY
@@ -97,6 +97,21 @@ def query_rag(
     """Answer a question with RAG, as one user, optionally as of a past date."""
     request_id = uuid.uuid4().hex[:8]
     user, groups = principal.email, principal.group_names
+
+    # Guardrails (app/guardrails.py): when switched on, the input rails see the
+    # question first. Blocked: no search, no answer, one audit row.
+    guard = guardrails.check_input(request.question)
+    if not guard["allowed"]:
+        with db.tx("app", principal.tenant_id, principal.user_id):
+            audit("query.blocked", user, user_id=principal.user_id, ip=client_ip(http),
+                  detail={"rail": guard["blocked_by"], "request_id": request_id})
+        logger.info("req_%s | user=%s | blocked by %s", request_id, user, guard["blocked_by"])
+        return QueryResponse(
+            question=request.question, answer=guard["answer"], model=get_model_name(), user=user, as_of=as_of,
+            sources=[], chunks_used=0, confidence="none", request_id=request_id,
+            strategy=strategy or RETRIEVAL_STRATEGY, guardrails=guard,
+        )
+
     with db.tx("app", principal.tenant_id, principal.user_id):
         try:
             retrieval = retrieve_with_doc_filter(
@@ -126,7 +141,7 @@ def query_rag(
             question=request.question, answer=NO_RESULT_ANSWER, model=get_model_name(),
             user=user, as_of=as_of, sources=[], chunks_used=0, confidence="none",
             no_result=True, request_id=request_id, doc_filter=filter_info,
-            strategy=strategy or RETRIEVAL_STRATEGY, trace=retrieval["trace"],
+            strategy=strategy or RETRIEVAL_STRATEGY, trace=retrieval["trace"], guardrails=guard,
         )
 
     confidence = score_confidence(chunks, high_threshold=high_threshold, low_threshold=low_threshold)
@@ -154,4 +169,5 @@ def query_rag(
         llm_available=llm_available,
         strategy=strategy or RETRIEVAL_STRATEGY,
         trace=retrieval["trace"],
+        guardrails=guard,
     )

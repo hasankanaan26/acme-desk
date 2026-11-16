@@ -120,6 +120,12 @@ SEED_PASSWORD = os.getenv("ACME_SEED_PASSWORD", "")
 # Sign-in switched off: every request without a session acts as this
 # account (e.g. admin@acme.test). Empty: normal sign-in. Local use only.
 AUTO_SIGNIN_EMAIL = os.getenv("ACME_AUTO_SIGNIN_EMAIL", "").strip().lower()
+# The top bar's "Switch to": become any active member of your tenant
+# without their password, to test the access rules persona by persona.
+# A real new session for that person (the server still decides what
+# they may read), written to the audit log. Local use only: refused
+# whenever COOKIE_SECURE is on, which any real deployment has.
+ROLE_SWITCHER = os.getenv("ACME_ROLE_SWITCHER", "false").lower() == "true" and not COOKIE_SECURE
 
 # --- Sync job settings ---
 # Bump PIPELINE_VERSION whenever parsing or chunking logic changes: it is
@@ -171,7 +177,8 @@ NO_RESULT_DISTANCE = float(os.getenv("NO_RESULT_DISTANCE", "1.6"))
 #   hyde           search with an LLM-written hypothetical answer
 #   multi_query    the question + three LLM rewrites, fused by rank
 #   routed         "who works remotely?" -> every matching directory
-#                  row (a lookup, not top k); else hybrid_rerank
+#                  row (a lookup, not top k); else hybrid_rerank.
+#                  The shape is decided by ROUTER (below).
 # Part 3, the second cut (small chunks, built by the sync):
 #   small          dense over the small chunks, returned as they are
 #   parent         dense over the small chunks, their SECTIONS returned
@@ -194,6 +201,15 @@ RERANKER_MODEL = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-
 # hyde and multi_query cache their LLM rewrites here: same model + same
 # prompt = the answer we already paid for. Delete it to force fresh calls.
 LLM_CACHE_FILE = RUNS_DIR / "llm_cache.json"
+# How `routed` decides a question's shape (app/rag/router_llm.py):
+#   llm    one cached model call returns a plan, code checks every field (default)
+#   rules  Wednesday's two regular expressions, no model
+# With llm and no model (no key, quota, outage) it uses the rules and says so.
+_requested_router = os.getenv("ROUTER", "llm").split("#")[0].strip().lower()
+ROUTER = _requested_router if _requested_router in ("llm", "rules") else "llm"
+# Lists the directory can't answer exactly ("who speaks Spanish?"), one JSON
+# line each: the backlog of columns worth adding. `python route_eval.py --misses`.
+ROUTER_MISSES_FILE = RUNS_DIR / "router_misses.jsonl"
 
 # --- The chat (Part 2, last block) ---
 # How many earlier question + answer pairs the model sees. The thread

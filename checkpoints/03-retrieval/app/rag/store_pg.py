@@ -87,13 +87,15 @@ def add_chunks(chunks: list[dict], embeddings: list[list[float]], collection: st
     catalog.ensure_index(name)
     with db.current().cursor() as cur:
         cur.executemany("""
-            INSERT INTO chunks (tenant_id, index_name, id, doc_id, chunk_index, text, metadata, embedding, parent_id)
-            VALUES (app_tenant(), %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO chunks (tenant_id, index_name, id, doc_id, chunk_index, text, metadata, embedding, parent_id, fields)
+            VALUES (app_tenant(), %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (tenant_id, index_name, id) DO UPDATE SET
                 doc_id = EXCLUDED.doc_id, chunk_index = EXCLUDED.chunk_index, text = EXCLUDED.text,
-                metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding, parent_id = EXCLUDED.parent_id""",
+                metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding, parent_id = EXCLUDED.parent_id,
+                fields = EXCLUDED.fields""",
             [(name, c["id"], c["metadata"]["doc_id"], c["metadata"]["chunk_index"], c["text"],
-              Jsonb(c["metadata"]), _vector(v), c["metadata"].get("parent_id"))
+              Jsonb(c["metadata"]), _vector(v), c["metadata"].get("parent_id"),
+              Jsonb(c["fields"]) if c.get("fields") else None)
              for c, v in sorted(zip(chunks, embeddings), key=lambda p: "parent_id" in p[0]["metadata"])])
     return len(chunks)
 
@@ -236,19 +238,71 @@ def keyword_search(query_text: str, query_embedding: list[float], top_k: int = 3
     return [_item(r) for r in rows]
 
 
+# ---- Records: rows of a spreadsheet, listed by their fields (007) ----
+# A CSV row's chunk carries `fields` (jsonb). Two queries serve the router,
+# both inside the same access filter as search(): a record is exactly as
+# readable as the document it came from.
+
 # Purpose:
-# EVERY chunk of one doc type this user may read, not a top k: what a
-# structured lookup needs ("who works remotely?" has as many answers as
-# the directory has matching rows). Same access filter as search(); each
-# row still carries its distance to the question, for the confidence.
-def records(query_embedding: list[float], doc_type: str, access: Access | None = None,
-            collection: str | None = None, limit: int = 1000) -> list[dict]:
+# The router's menu: for each record set (a CSV document) this user may
+# read, every column and every distinct value in it. Rebuilt on every
+# question, from the live index: a new value, or a new column, is on the
+# menu as soon as the sync stores it.
+#   {"PEOPLE-DIRECTORY": {"title": "Team Directory", "doc_type": "people", "rows": 12,
+#                         "columns": {"office": ["New York", "Remote", "San Francisco"], ...}}}
+def record_menu(sources: list[str], access: Access | None = None, collection: str | None = None) -> dict[str, dict]:
     name = _index(collection)
-    if not name or access is None or not access.group_ids:
-        return []  # no index, or nobody: fail closed
+    if not sources or not name or access is None or not access.group_ids:
+        return {}  # nothing asked, no index, or nobody: fail closed
+    when = (sql.SQL("c.effective_from <= %(day)s AND c.effective_to > %(day)s") if access.as_of
+            else sql.SQL("c.status = 'current'"))
+    query = sql.SQL("""
+        SELECT c.doc_id, min(c.doc_type) AS doc_type, min(c.metadata ->> 'title') AS title,
+               f.key AS column_name, array_agg(DISTINCT f.value ORDER BY f.value) AS column_values,
+               count(DISTINCT c.id) AS row_count
+        FROM chunks c CROSS JOIN LATERAL jsonb_each_text(c.fields) AS f
+        WHERE c.index_name = %(index)s
+          AND c.parent_id IS NULL
+          AND c.fields IS NOT NULL
+          AND c.doc_id = ANY(%(sources)s)
+          AND {when}
+          AND EXISTS (SELECT 1 FROM document_acl a
+                      WHERE a.tenant_id = c.tenant_id AND a.doc_id = c.doc_id
+                        AND a.group_id = ANY(%(groups)s::uuid[]))
+        GROUP BY c.doc_id, f.key
+        ORDER BY c.doc_id, f.key""").format(when=when)
+    menu: dict[str, dict] = {}
+    for r in db.current().execute(query, {"index": name, "sources": list(sources), "day": access.as_of,
+                                          "groups": list(access.group_ids)}).fetchall():
+        entry = menu.setdefault(r["doc_id"], {"title": r["title"], "doc_type": r["doc_type"],
+                                              "rows": r["row_count"], "columns": {}})
+        entry["columns"][r["column_name"]] = list(r["column_values"])
+    return menu
+
+
+# Purpose:
+# Every record of one set whose fields match ALL the filters (a column
+# with several values matches any of them). Not a top k: "who works in San
+# Francisco?" has six answers, and all six come back. The filters arrive
+# already checked against record_menu(), and are passed as parameters,
+# never pasted into the SQL. Each row still carries its distance to the
+# question, so the answer step's confidence works as for any chunk.
+#   fields ->> 'office' = ANY(['Remote'])  AND  fields ->> 'department' = ANY([...])
+def lookup_records(query_embedding: list[float], source: str, filters: dict[str, list[str]],
+                   access: Access | None = None, collection: str | None = None, limit: int = 1000) -> list[dict]:
+    name = _index(collection)
+    if not filters or not name or access is None or not access.group_ids:
+        return []  # no filter (never "everything"), no index, or nobody: fail closed
     dims = len(query_embedding)
     when = (sql.SQL("c.effective_from <= %(day)s AND c.effective_to > %(day)s") if access.as_of
             else sql.SQL("c.status = 'current'"))
+    params = {"q": _vector(query_embedding), "index": name, "source": source, "day": access.as_of,
+              "groups": list(access.group_ids), "k": limit}
+    matches = []
+    for i, (column, values) in enumerate(sorted(filters.items())):
+        params[f"col{i}"], params[f"vals{i}"] = column, list(values)
+        matches.append(sql.SQL("c.fields ->> {col} = ANY({vals})").format(
+            col=sql.Placeholder(f"col{i}"), vals=sql.Placeholder(f"vals{i}")))
     query = sql.SQL("""
         SELECT c.id, c.text, c.metadata,
                2 * (c.embedding::vector({d}) <=> %(q)s::vector({d})) AS distance
@@ -256,17 +310,15 @@ def records(query_embedding: list[float], doc_type: str, access: Access | None =
         WHERE c.index_name = %(index)s
           AND c.parent_id IS NULL
           AND c.dims = {d}
+          AND c.doc_id = %(source)s
+          AND {matches}
           AND {when}
-          AND c.doc_type = %(doc_type)s
           AND EXISTS (SELECT 1 FROM document_acl a
                       WHERE a.tenant_id = c.tenant_id AND a.doc_id = c.doc_id
                         AND a.group_id = ANY(%(groups)s::uuid[]))
-        ORDER BY c.doc_id, c.chunk_index
-        LIMIT %(k)s""").format(d=sql.Literal(dims), when=when)
-    rows = db.current().execute(query, {"q": _vector(query_embedding), "index": name, "day": access.as_of,
-                                        "doc_type": doc_type, "groups": list(access.group_ids),
-                                        "k": limit}).fetchall()
-    return [_item(r) for r in rows]
+        ORDER BY c.chunk_index
+        LIMIT %(k)s""").format(d=sql.Literal(dims), matches=sql.SQL(" AND ").join(matches), when=when)
+    return [_item(r) for r in db.current().execute(query, params).fetchall()]
 
 
 # Purpose:

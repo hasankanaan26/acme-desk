@@ -76,10 +76,32 @@ def test_an_unanswerable_question_is_calm_when_nothing_looks_sure():
     assert score(q, [chunk("A", "a")])["hit@1"] is None      # no hit to score
 
 
-def test_the_winner_is_quality_then_cost_and_a_leak_disqualifies():
-    def row(hit, mrr, llm, ms, leaks=0):
-        return {"hit@1": hit, "mrr": mrr, "calm": None, "llm": llm, "ms": ms, "leaks": leaks}
-    assert winner({"dense": row(0.5, 0.7, 0, 40), "rerank": row(0.75, 0.8, 0, 400)}) == "rerank"
+def test_context_recall_is_the_share_of_needs_that_arrived():
+    q = {"needs": [{"doc": "A", "evidence": ["alpha"]}, {"doc": "B", "evidence": ["beta"]}]}
+    assert score(q, [chunk("A", "alpha"), chunk("C", "noise")])["recall"] == 0.5
+    assert score(q, [chunk("B", "beta"), chunk("A", "alpha")])["recall"] == 1.0
+    assert score(q, [chunk("A", "wrong piece")])["recall"] == 0.0          # right document is not enough
+
+
+def test_context_precision_is_ragas_average_precision():
+    from app.evals.scoreboard import context_precision
+
+    assert context_precision([True, False, False]) == 1.0
+    assert context_precision([False, True]) == 0.5                          # useful only at 2
+    assert context_precision([True, False, True]) == 0.83                   # (1/1 + 2/3) / 2
+    assert context_precision([False, False]) == 0.0
+    q = {"needs": [{"doc": "A", "evidence": ["alpha"]}]}
+    s = score(q, [chunk("C", "noise"), chunk("A", "alpha")])
+    assert s["precision"] == 0.5 and s["useful"] == [False, True]
+    assert score({"needs": []}, [chunk("A", "a")])["precision"] is None      # unanswerable: calm instead
+
+
+def test_the_winner_is_recall_then_precision_then_cost_and_a_leak_disqualifies():
+    def row(recall, precision, llm, ms, leaks=0):
+        return {"hit@1": 0.0, "recall": recall, "precision": precision, "calm": None, "llm": llm, "ms": ms,
+                "leaks": leaks}
+    assert winner({"dense": row(0.5, 0.9, 0, 40), "rerank": row(0.75, 0.6, 0, 400)}) == "rerank"   # recall first
+    assert winner({"dense": row(0.75, 0.6, 0, 40), "rerank": row(0.75, 0.8, 0, 400)}) == "rerank"  # then precision
     assert winner({"hyde": row(0.75, 0.8, 1, 2000), "rerank": row(0.75, 0.8, 0, 400)}) == "rerank"
     assert winner({"leaky": row(1.0, 1.0, 0, 10, leaks=1), "dense": row(0.25, 0.4, 0, 40)}) == "dense"
 
@@ -188,3 +210,30 @@ def test_the_verdict_says_whose_fault_a_wrong_answer_is():
     nothing = {"needs": [], "facts": []}
     assert answers.verdict(nothing, "I don't have information about that.", wrong_context, 5) == "correct"
     assert answers.verdict(nothing, "Parking is $200 a month.", wrong_context, 5) == "made it up"
+
+
+def test_faithfulness_is_the_share_of_supported_claims(monkeypatch):
+    import answers
+
+    replies = []
+
+    def judge(user_prompt, system_prompt=""):
+        replies.append(user_prompt)
+        return ('```json\n{"claims": [{"claim": "Billing changes need at least one reviewer", "supported": true},'
+                ' {"claim": "The handbook applies", "supported": false}]}\n```')
+    monkeypatch.setattr(answers, "cached_call_llm", judge)
+    context = [{**chunk("ENG-CODING", "Every PR needs at least one reviewer.", distance=0.6), "source": "coding.md", "chunk_index": 0}]
+    faith, claims = answers.faithfulness("At least one reviewer.", context)
+    assert faith == 0.5 and [c["supported"] for c in claims] == [True, False]
+    assert "Every PR needs at least one reviewer." in replies[0]         # judged against the answer's own context
+    # Nothing to judge: "I don't know", or no context at all. No judge call either.
+    assert answers.faithfulness("I don't have information about that.", context) == (None, [])
+    assert len(replies) == 1
+
+
+def test_a_judge_reply_that_is_not_json_scores_nothing(monkeypatch):
+    import answers
+
+    monkeypatch.setattr(answers, "cached_call_llm", lambda *a, **k: "Looks faithful to me!")
+    assert answers.faithfulness("Two reviewers.", [{**chunk("ENG-HANDBOOK", "two reviewers"), "source": "h.md", "chunk_index": 0}]) == (None, [])
+    assert answers.claims_from('{"claims": []}') == []
