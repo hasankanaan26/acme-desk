@@ -1,0 +1,112 @@
+/* ============================================================
+   Side by side tab — two strategies, one question (duel.js)
+   Uses the tokens from ui.css; adds one colour per side.
+   ============================================================ */
+
+:root {
+    --side-a: #2f5bea;  --side-a-soft: #e8eefe;
+    --side-b: #b0398f;  --side-b-soft: #f9e6f3;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --side-a: #6d8dff;  --side-a-soft: #232c4a;
+        --side-b: #f08ad0;  --side-b-soft: #3d2236;
+    }
+}
+
+/* Picker: one button per example, grouped by lever */
+/* Columns, not grid: groups have different heights and should flow without gaps */
+.sbs-picker { columns: 4 210px; column-gap: 12px; margin-bottom: 16px; }
+.sbs-group { display: flex; flex-direction: column; gap: 6px; break-inside: avoid; margin-bottom: 12px; }
+.sbs-group-name { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 2px; }
+.sbs-pick {
+    display: flex; gap: 10px; align-items: flex-start; text-align: left; white-space: normal;
+    width: 100%; padding: 8px 10px; font-weight: 400; font-size: 0.86em;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+}
+.sbs-pick:hover { border-color: var(--accent); }
+.sbs-pick.active { background: var(--accent-soft); border-color: var(--accent); }
+.sbs-pick-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sbs-pick-body span { color: var(--muted); font-size: 0.92em; }
+.sbs-pick code { font-size: 0.82em; }
+.sbs-check { border-style: dashed; }
+.sbs-num {
+    flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.8em; font-weight: 700; background: var(--surface-2); color: var(--accent);
+}
+
+/* Stage */
+#sbsStage { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; }
+.sbs-eyebrow { font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 2px; }
+.sbs-lesson h3 { font-size: 1.15em; margin-bottom: 6px; }
+.sbs-question { font-size: 1.15em; font-weight: 600; margin: 4px 0 12px; }
+.sbs-vs { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: stretch; }
+.sbs-vs-word { align-self: center; font-weight: 700; color: var(--muted); font-size: 0.85em; }
+.sbs-vs-side { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; }
+.sbs-vs-side small { width: 100%; color: var(--muted); font-size: 0.8em; line-height: 1.35; }
+.sbs-vs-side.sbs-a { background: var(--side-a-soft); }
+.sbs-vs-side.sbs-b { background: var(--side-b-soft); }
+
+.sbs-tag {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 6px; font-size: 0.8em; font-weight: 700; color: #fff;
+}
+.sbs-a .sbs-tag { background: var(--side-a); }
+.sbs-b .sbs-tag { background: var(--side-b); }
+@media (prefers-color-scheme: dark) { .sbs-tag { color: #12151b; } }
+
+.sbs-step h3 { font-size: 1em; }
+.sbs-step p { line-height: 1.6; }
+.sbs-step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%; font-size: 0.8em; font-weight: 700;
+    background: var(--accent); color: var(--accent-text);
+}
+.sbs-step-num.inverse { background: var(--accent-text); color: var(--accent); margin-right: 4px; }
+.sbs-reveal { margin-top: 10px; }
+.sbs-reveal summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 0.9em; }
+.sbs-reveal p { margin-top: 8px; }
+
+.sbs-run { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 14px; margin: 0; }
+.sbs-run button { display: inline-flex; align-items: center; }
+.sbs-custom .sbs-wide { grid-column: 1 / -1; }
+
+/* Results */
+.sbs-verdict { border-radius: var(--radius); padding: 12px 16px; font-size: 0.95em; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-left: 5px solid; }
+.sbs-verdict-a { background: var(--side-a-soft); border-color: var(--side-a); }
+.sbs-verdict-b { background: var(--side-b-soft); border-color: var(--side-b); }
+.sbs-verdict-tie { background: var(--high-bg); color: var(--high-fg); border-color: var(--high-fg); }
+.sbs-verdict-neither { background: var(--medium-bg); color: var(--medium-fg); border-color: var(--medium-fg); }
+.sbs-overlap { margin-top: 0; }
+
+.sbs-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 900px) { .sbs-cols { grid-template-columns: minmax(0, 1fr); } }
+.sbs-side { border-top: 4px solid; }
+.sbs-side.sbs-a { border-top-color: var(--side-a); }
+.sbs-side.sbs-b { border-top-color: var(--side-b); }
+.sbs-side > .muted { margin: -4px 0 10px; }
+.sbs-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+@media (max-width: 520px) { .sbs-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sbs-stats .stat { padding: 6px 8px; }
+.sbs-stats .stat b { font-size: 1.05em; }
+.sbs-stats .stat span { font-size: 0.72em; }
+.sbs-label { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 10px 0 4px; font-weight: 600; }
+.sbs-answer { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; font-size: 0.92em; }
+
+.sbs-rank { font-family: var(--mono); font-size: 0.85em; color: var(--muted); flex-shrink: 0; }
+.chunk.sbs-hit { border-color: var(--high-fg); }
+.chunk.sbs-hit summary { background: var(--high-bg); }
+.sbs-mark { font-size: 0.72em; font-weight: 700; padding: 1px 7px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
+.sbs-mark-hit { background: var(--high-fg); color: var(--surface); }
+.sbs-mark-only { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+.sbs-prov { font-size: 0.78em; color: var(--muted); padding: 8px 12px 0; border-top: 1px solid var(--border); }
+.sbs-prov + pre { border-top: none; }
+
+.sbs-explain { border-left: 4px solid var(--accent); }
+.sbs-explain-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 6px; }
+.sbs-explain-grid p:not(.sbs-label) { font-size: 0.9em; }
+
+.sbs-table tr[data-index] { cursor: pointer; }
+.sbs-table tr[data-index]:hover td { background: var(--surface-2); }
+.sbs-table .badge { margin-left: 4px; }

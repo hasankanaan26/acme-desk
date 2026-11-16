@@ -185,6 +185,48 @@ def principal_for(token: str) -> Principal | None:
         return _principal(conn, str(session["user_id"]), session["email"], session["display_name"], tenant_id)
 
 
+# Purpose:
+# The role switcher (ACME_ROLE_SWITCHER, local testing only): the
+# accounts you can become, and becoming one. Only active members of
+# YOUR tenant (RLS on memberships says so too). The switch ends the
+# current session and starts a real one for the other person, so
+# everything after it runs exactly as if they had signed in.
+SWITCHABLE_SQL = """
+    SELECT u.email, u.display_name, m.role,
+           coalesce(array_agg(g.name ORDER BY g.name) FILTER (WHERE g.name IS NOT NULL), '{}') AS groups
+    FROM memberships m
+    JOIN users u ON u.id = m.user_id
+    LEFT JOIN group_members gm ON gm.user_id = u.id AND gm.tenant_id = m.tenant_id
+    LEFT JOIN groups g ON g.id = gm.group_id
+    WHERE m.tenant_id = app_tenant() AND u.is_active
+    GROUP BY u.email, u.display_name, m.role
+    ORDER BY m.role = 'admin' DESC, u.email"""
+
+
+def switchable_accounts(principal: Principal) -> list[dict]:
+    with db.tx("app", principal.tenant_id, principal.user_id) as conn:
+        return [dict(r) for r in conn.execute(SWITCHABLE_SQL)]
+
+
+def switch_to(principal: Principal, token: str | None, email: str, ip: str | None,
+              user_agent: str | None) -> tuple[str, Principal]:
+    email = (email or "").strip().lower()
+    with db.tx("app", principal.tenant_id, principal.user_id) as conn:
+        user = conn.execute("""
+            SELECT u.id::text AS id, u.email, u.display_name FROM users u
+            JOIN memberships m ON m.user_id = u.id AND m.tenant_id = app_tenant()
+            WHERE u.email = %s AND u.is_active""", (email,)).fetchone()
+        if not user:
+            raise LoginError(404, "No active member of this tenant has that email.")
+        if token:
+            sessions.delete(token)
+        new_token = sessions.create(user["id"], principal.tenant_id, ip, user_agent)
+        audit("auth.switch", principal.email, user_id=principal.user_id, target=user["email"],
+              detail={"from": principal.email, "to": user["email"]}, ip=ip)
+        switched = _principal(conn, user["id"], user["email"], user["display_name"], principal.tenant_id)
+    return new_token, switched
+
+
 def sign_out(token: str, principal: Principal | None, ip: str | None) -> None:
     with db.tx("app", principal.tenant_id if principal else None) as conn:  # noqa: F841
         sessions.delete(token)

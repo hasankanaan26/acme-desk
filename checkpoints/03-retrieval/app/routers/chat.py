@@ -13,6 +13,7 @@
 #
 # SERVER-SENT EVENTS: the reply is a stream of small text messages,
 #   event: step    a node finished: identify, retrieve, answer, finalize
+#                  (and first "guardrails", when they are switched on)
 #   event: token   a few characters of the answer, as the model writes
 #   event: done    the final answer, its sources, the outcome
 #   event: error   something broke; the turn is over
@@ -29,11 +30,12 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from pydantic import BaseModel, Field
 
+from app import db, guardrails
 from app.assistant import memory, threads, workflow
 from app.assistant.nodes import HIDDEN, cited_docs, unreadable_docs
 from app.assistant.state import DeskContext
 from app.auth.deps import client_ip, csrf_guard, get_principal
-from app.auth.service import Principal
+from app.auth.service import Principal, audit
 
 logger = logging.getLogger("acme.chat")
 router = APIRouter(prefix="/chat", tags=["Chat"], dependencies=[Depends(csrf_guard)])
@@ -127,6 +129,26 @@ def ask(thread_id: uuid.UUID, body: ChatMessage, request: Request, principal: Pr
 
     def events():
         try:
+            # Guardrails (app/guardrails.py): the input rails see this question and
+            # the person's own earlier ones, before anything is searched. Run with
+            # no database connection held, as every model call here is.
+            if guardrails.get_settings()["enabled"]:
+                with memory.checkpointer(principal) as saver:
+                    earlier = [str(m.content) for m in
+                               workflow.compile(saver).get_state(_config(thread["id"])).values.get("messages", [])
+                               if isinstance(m, HumanMessage)]
+                guard = guardrails.check_input(question, history=earlier)
+                yield _sse("step", {"node": "guardrails", "allowed": guard["allowed"], "blocked_by": guard["blocked_by"],
+                                    "ms": guard["ms"], "error": guard["error"], "rails": guard["rails"]})
+                if not guard["allowed"]:
+                    with db.tx("app", principal.tenant_id, principal.user_id):
+                        audit("chat.blocked", principal.email, user_id=principal.user_id, target=thread["id"],
+                              ip=context.ip, detail={"rail": guard["blocked_by"], "request_id": request_id})
+                    logger.info("chat %s | %s | blocked by %s", request_id, principal.email, guard["blocked_by"])
+                    yield _sse("done", {"thread_id": thread["id"], "request_id": request_id, "answer": guard["answer"],
+                                        "outcome": "blocked", "confidence": None, "search_query": None, "sources": [],
+                                        "guardrails": guard})
+                    return
             with memory.checkpointer(principal) as saver:
                 graph = workflow.compile(saver)
                 turn = {"question": question, "messages": [HumanMessage(question)]}

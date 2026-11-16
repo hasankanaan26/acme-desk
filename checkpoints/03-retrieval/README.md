@@ -60,6 +60,12 @@ python checkpoints/03-retrieval/scoreboard.py             # the scoreboard, no m
 python run_checkpoint.py 03-retrieval                     # the UI: Search tab, strategy small / parent
 ```
 
+The **Side by side** tab (Part 3 group) runs two strategies on one question at the same time: eleven
+worked examples (keyword vs meaning, rerank, parent, HyDE, multi-query, routing), each with a
+prediction, a live verdict and the reason, plus a custom duel. It is the Week 7 lab's tab on this
+app's `GET /search`, as the signed-in user, so sign in as someone in `engineering` (`intern`,
+`eng-manager`) for the examples that need the engineering documents.
+
 Coming from Part 2's database: `migrate` adds the column, and the first `sync.py --apply` re-embeds
 every document once (`change 18`), because every chunk now records how it was cut (`pipeline`) and
 that changed (`acme.2`: two cuts). It doesn't need `--rebuild`. Order matters as in Part 2: a `seed` after the events puts Friday's register back.
@@ -134,7 +140,41 @@ stars them and keeps them out of the winners. The class run with Azure embedding
 | `answers.py` | The answer-level check: correct, retrieval miss, generation miss, made it up |
 | `shared/golden/golden_scenarios.json` | 28 questions in 7 scenarios, with needs and facts |
 | `tests/test_small_chunks.py`, `tests/test_scoreboard.py` | Both cuts, access on both, the metrics, and a lint on the question set |
+| `app/rag/router_llm.py` | `routed`'s router, the production way: one cached model call returns a plan, code checks every field against the directory, no model means the rules |
+| `app/prompts/route_question.py` | The router's prompt; its menu of columns and values is filled from the directory rows the user may read |
+| `route_eval.py` | Route accuracy, the rules and the model side by side; `--misses` prints the backlog of missing columns |
+| `shared/golden/golden_routes.json` | 23 questions labelled with their route (and a list's exact filters), built around the rules' known failures |
+| `tests/test_router_llm.py` | Every guard, the retry, the fallback, the miss log, a lint on the route set, and `routed` through `/search` (fake model) |
 | `app/static/` | `small` and `parent` in both strategy menus; "Matched by the small chunk" on a parent result |
+
+### The router, the production way (added 15 Nov)
+
+`routed` used to decide a question's shape with two regular expressions (`app/rag/router.py`). They read
+words, not meaning, and on the labelled route set they get 11 of 23 right: "Show me all remote staff"
+goes to search (no who / list / how many), and "Who do I talk to on the Engineering team about a
+deploy?" comes back as every engineer (who + team + Engineering). `app/rag/router_llm.py` is the
+history-rag project's router on Acme's directory:
+
+1. One cached model call returns a **plan** (JSON): `pointwise`, `aggregation` with filters, or
+   `aggregation_unindexed` with the column the directory would need ("who speaks Spanish?": language).
+2. The prompt's menu is **built from the data**: the columns and values in the directory rows this user may read.
+3. **Code checks every field** before anything runs. A column the directory lacks makes the plan
+   unindexed. A value no row has ("London") means a normal search, never an empty or wider list. A
+   synonym the model kept ("remote") becomes the stored value ("Remote"). The model never writes
+   the filter: `router.lookup()` runs the checked values.
+4. A reply that isn't JSON gets **one retry**; still unusable, or **no model**: the rules decide and the
+   trace says so (`decided by the rules`). The search degrades; it never fails.
+5. An unindexed list is searched instead and **logged** to `runs/router_misses.jsonl`, the backlog of
+   columns worth adding (`python route_eval.py --misses`).
+
+```bash
+python route_eval.py --router rules   # no model: 11/23, and how each miss was wrong
+python route_eval.py --details        # the rules and the model side by side (one cached call per question)
+```
+
+`ROUTER=rules` in `.env` keeps the regular expressions (no model call). With `ROUTER=llm` (the
+default), `routed` is a model technique: `scoreboard.py` runs it with `--llm`, and stars it when no
+model answered.
 
 Also fixed:
 - **A new cut now reaches every document.** Before, a file with the same eTag was "unchanged" even
@@ -151,7 +191,7 @@ Also fixed:
 
 ```bash
 docker compose up -d db
-pytest checkpoints/03-retrieval/tests -q     # 157 pass, 2 skipped (tonight's exercises: Part 2's and Part 3's), ~2 min
+pytest checkpoints/03-retrieval/tests -q     # 178 pass, 2 skipped (tonight's exercises: Part 2's and Part 3's), ~3 min
 ```
 
 `test_scoreboard.py` needs no database and no model: the metrics on hand-made results, and the lint

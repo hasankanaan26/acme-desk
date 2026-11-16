@@ -21,6 +21,11 @@ is blocked on that network), no model key. The rows that need the reranker or a 
 
 ## 1. The point
 
+First, before any measuring (added 15 Nov): **route the question.** Some questions want a list ("who
+works remotely?"): every directory row that matches, which top-k can never return. A router decides
+the shape before the search. Version one is two regular expressions (11 of 23 routes right); version
+two is a model's plan checked by code (22 of 23, one call a question). Then the night's three ideas:
+
 1. **Measure by kind of question.** No technique wins every kind, and the average across all
    questions hides it: over every question `dense` looks best, while `hybrid` wins three of the seven tables.
 2. **Measure what the model needs, what it costs, and leaks.** "Right document in the top 5" is too
@@ -80,10 +85,13 @@ Copy the numbers into section 4. If `rerank` still shows a star, the cross-encod
       the output is there to scroll back to if the live run is slow.
 - [ ] `fallbacks/part3/` open in the editor. Editor and terminal zoomed to 18pt+.
 - [ ] The seven words ready to paste (`part3-teaching-guide.md`).
+- [ ] A model in `.env` (`LLM_PROVIDER` and its key): `routed` asks it for the route. One
+      `python checkpoints/03-retrieval/route_eval.py` run, so its 23 answers are cached and the live run is instant.
+- [ ] Search tab, strategy `routed`, "Who works remotely?" once: the trace says "decided by the model".
 
 ---
 
-## 3. Run of show (about 1 h 30)
+## 3. Run of show (about 1 h 50; about 1 h 35 with the cuts below)
 
 A picture before any code, nothing typed live except the commands below, a "what you should see"
 slide after every live step. Online: no questions to the room; read the chat at the dividers, at
@@ -92,30 +100,50 @@ the break and at the end.
 | Block | Slides | Min | Ends by | Live | Expect |
 |---|---|---|---|---|---|
 | Opening | 1–4 | 6 | 0:06 | none | the arc; three ideas; Wednesday was by eye |
-| Two cuts of the same documents | 5–10 | 20 | 0:26 | none | sections vs small chunks; match small, return big; why the sync writes both; read your chunks |
-| HyDE | 11 | 4 | 0:30 | none | search with a made-up answer; one LLM call; looks surer than it is |
-| A scoreboard you can trust | 12–17 | 20 | 0:50 | none | needs, not documents; seven kinds; the numbers in plain words; freeze and lint |
-| Break | 18 | 10 | 1:00 | run the scoreboard once; app signed in as the intern | |
-| Live: the scoreboard, small vs parent | 19–23 | 16 | 1:16 | `scoreboard.py`; Search tab, two questions | the tables disagree; the average lies; fragments vs the whole section |
-| Correct, not only faithful | 24–27 | 9 | 1:25 | `answers-class.txt` (pre-run) | the stale FAQ; retrieval miss vs generation miss; sure of itself |
-| Wrap | 28–30 | 5 | 1:30 | none | three ideas, tonight, Monday |
+| **Lists and routing** | 5–12 | 15 | 0:21 | Search tab, `dense` vs `routed`, three questions | search can't list; pointwise vs aggregation; the rules and their misses; a model's plan checked by code |
+| Two cuts of the same documents | 13–18 | 20 | 0:41 | none | sections vs small chunks; match small, return big; why the sync writes both; read your chunks |
+| HyDE | 19 | 4 | 0:45 | none | search with a made-up answer; one LLM call; looks surer than it is |
+| A scoreboard you can trust | 20–25 | 20 | 1:05 | none | needs, not documents; seven kinds; the numbers in plain words; freeze and lint |
+| Break | 26 | 10 | 1:15 | run the scoreboard once; app signed in as the intern | |
+| Live: the scoreboard, small vs parent | 27–31 | 16 | 1:31 | `scoreboard.py`; Search tab, two questions | the tables disagree; the average lies; fragments vs the whole section |
+| **Live: the router, measured** | 32–33 | 5 | 1:36 | `route_eval.py --details` | rules 11/23, model 22/23 at one call a question; R22 |
+| Correct, not only faithful | 34–37 | 9 | 1:45 | `answers-class.txt` (pre-run) | the stale FAQ; retrieval miss vs generation miss; sure of itself |
+| Wrap | 38–40 | 5 | 1:50 | none | three ideas, tonight, next session |
 
-If you are more than 10 minutes behind at the break: show slide 22 from its screenshots only and skip
-the billing step. Never cut the scoreboard run (19–21), small vs parent (22), or the stale FAQ (25).
+To finish near 1 h 35, cut in this order: HyDE to one sentence (19), the sync code (17), the grid (28,
+if the live run was readable), the billing steps of small vs parent (30, steps 3 and 4), "sure of
+itself" (37). If you are more than 10 minutes behind at the break: show slide 30 from its screenshots
+only. Never cut routing's first live step (11, steps 1 and 2), the scoreboard run (27–29), small vs
+parent (30), the router's numbers (33), or the stale FAQ (35).
 
 **Demo rule:** never debug in front of the room for more than 60 seconds. Say "here's what it does",
 go to the next slide (it shows the output), fix it at the break.
 
 ### Introducing the code
 
-Nothing typed. If someone asks to see code, in this order: `app/rag/children.py` (the second cut,
+Nothing typed. If someone asks to see code, in this order: `app/rag/router.py` (the rules, 70 lines),
+`app/rag/router_llm.py` `check()` (the guards), `app/prompts/route_question.py`, `app/rag/children.py` (the second cut,
 40 lines), `app/rag/retriever.py` `_parent()` (12 lines), `app/rag/store_pg.py` `by_ids()` (why the
 sections are fetched through the filter again), `app/evals/scoreboard.py` (`meets()`, `score()`,
 `winner()`), `shared/golden/golden_scenarios.json` (S09, S13, S20).
 
 ### The live demo, exactly
 
-**1. The scoreboard (slide 19).** In the terminal:
+**0. routed (slide 11).** Browser, signed in as the intern, Search tab, top_k 3:
+
+1. "Who works remotely?", strategy `dense`: the remote-work policy and the FAQ, no people.
+2. Same question, strategy `routed`: Maria Garcia, Michael Brown, Ahmed Hassan, total 3 (not top 3: the
+   lookup ignores k). Trace: `route: aggregation on {'office': ['Remote']} -> 3 matching record(s), all
+   of them (decided by the model)`, then `router: Every person whose office is Remote.`
+3. "Show me all remote staff", `routed`: the same three. The rules would have searched (no who / list /
+   how many).
+4. "Who do I talk to on the Engineering team about a deploy?", `routed`: `route: pointwise (decided by
+   the model)` and its reason. The rules would have listed every engineer.
+
+No model: the trace says `router model unavailable (...): the rules decided`; steps 1, 2 and 4's rules
+answer still show the idea, step 3 searches. Say "that's version one" and go to slide 12.
+
+**1. The scoreboard (slide 27).** In the terminal:
 
 ```bash
 python checkpoints/03-retrieval/scoreboard.py
@@ -127,7 +155,7 @@ seven: **casual** (dense wins, keyword 0.00), **identifier** (keyword and hybrid
 **whole-section** (small: doc@5 1.00, Hit@5 0.25). Then "Who wins what" and the `all answerable`
 line: dense 0.42 overall, while hybrid wins three tables. Then "Leaks ... 0".
 
-**2. small vs parent (slide 22).** Browser, signed in as the intern, Search tab, top_k 3:
+**2. small vs parent (slide 30).** Browser, signed in as the intern, Search tab, top_k 3:
 
 1. "What do I need to do in my first week?", strategy `small`. #1 is Week 3 ("First Contributions":
    the word "first"), #2 is one sentence of Week 1: "Complete the mandatory security awareness training…".
@@ -139,9 +167,22 @@ line: dense 0.42 overall, while hybrid wins three tables. Then "Leaks ... 0".
    whole PDF page, distance 1.46).
 4. Same question, `parent`: the handbook is #2, "Matched by the small chunk: Engineering Handbook: A
    change that touches billing or authentication needs two reviewers." (0.90). That is what parent is
-   for: a fact drowned in a long section. Acme's sections are rarely long (slide 23).
+   for: a fact drowned in a long section. Acme's sections are rarely long (slide 31).
 
-**3. Correct, not only faithful (slides 25–26).** Show `fallbacks/part3/answers-class.txt` (run this
+**2b. The router, measured (slide 32).** In the terminal:
+
+```bash
+python checkpoints/03-retrieval/route_eval.py --details
+```
+
+Instant once cached (this morning's run). Read the two summary lines at the bottom: rules 11/23 (5
+lists sent to search, 4 passages turned into lists, 2 unindexed mixed up, 1 wrong filter), model 22/23
+(1 unindexed mixed up). Scroll to R22, "Who joined the company this year?": the model's reason says the
+directory has no start date, and it still answered pointwise. Don't edit the prompt to fix it. The
+model costs one call before every search (median 1.4 s on 15 Nov, gpt-4.1-mini). No model: `--router
+rules`, and slide 33 for the model's column.
+
+**3. Correct, not only faithful (slides 35–36).** Show `fallbacks/part3/answers-class.txt` (run this
 morning), not a live run. If the room asks for live: Ask tab, intern, "How many days of unused
 vacation can I carry over now?", strategy `dense`, top_k 3. See section 4 for what it said this morning.
 
@@ -210,9 +251,10 @@ it is the slide.
 `scoreboard-local.txt` (the 12 Nov run with `--details`: every question, every technique),
 `scoreboard-class.txt` and `answers-class.txt` (Friday morning), `screens/` (Search tab: first week
 with `small` and `parent`, the billing question with `dense` and `parent`), `solutions/context_tokens.py`
-(tonight's exercise 2; don't share it tonight).
+(tonight's exercise 2; don't share it tonight), `route-eval-class.txt` (`route_eval.py --details`,
+gpt-4.1-mini, 15 Nov: the rules and the model on all 23 route questions, with the model's reasons).
 
-If the app won't start: slides 20–22 carry the output. If Postgres won't start: the scoreboard text is
+If the app won't start: slides 12 and 28–30 carry the output. If Postgres won't start: the scoreboard text is
 in `scoreboard-local.txt`; teach from it.
 
 ---
@@ -221,6 +263,9 @@ in `scoreboard-local.txt`; teach from it.
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| `routed` trace: "router model unavailable (…): the rules decided" | no model key, quota, outage | the rules still route "who works remotely?"; teach version two from slides 10–12 and `route-eval-class.txt` |
+| `route_eval.py`: "No model answered … the model column is the rules' fallback" | the same | `--router rules` live, slide 33 for the model |
+| `routed` trace: "route: pointwise" with no "decided by" | the signed-in person may not read the team directory | sign in as the intern (employees can read it) |
 | `scoreboard.py`: "The live index has no small chunks" | the index was built by Part 2 | `python checkpoints/03-retrieval/sync.py --apply` (re-cuts every document: `change 18`) |
 | `sync.py`: "The live index was built with azure:… but the embedder is now local:…" | Wednesday's index was Azure | `sync.py --rebuild --apply` |
 | `rerank`, `hybrid_rerank`, `routed` starred, "reranker unavailable" in `--details` | the cross-encoder can't download (no network, a proxy, a corporate block) | run without them: `--strategies dense,keyword,hybrid,small,parent`; the slides have the rest |

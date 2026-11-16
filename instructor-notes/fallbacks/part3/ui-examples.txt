@@ -1,0 +1,256 @@
+Part 3 in the UI: the slides' questions, asked through the Search tab's API (GET /search), 16 Nov.
+Postgres database acme_part3: SOURCE=local, Monday's documents (fake_drive.py apply all), local MiniLM embeddings,
+89 sections + 136 small chunks; the router's model is Azure gpt-4.1-mini (cached in runs/llm_cache.json). top_k 3 unless shown.
+Distances are the best match's; routed's lookup rows have no ranking (every match, no k).
+
+### [intern] dense: Who works remotely?
+    total 3, 62.0 ms
+    #1 HR-REMOTE  d=1.00553697347641  Remote Work Guidelines > Eligibility - All engineering roles are eligible for fully remote or hybrid work. - N
+    #2 COMPANY-FAQ  d=1.0461317300796509  Company FAQ > Can I work from another country? Remote work is allowed within the employee's country of residen
+    #3 HR-REMOTE  d=1.0464250757224876  Remote Work Guidelines > Security - Always use the company VPN when accessing internal systems. - Lock your sc
+    trace: dense top 3
+
+### [intern] routed: Who works remotely?
+    total 3, 56.6 ms
+    #1 PEOPLE-DIRECTORY  d=1.5205980992495445  Team Directory > Maria Garcia name: Maria Garcia; role: Frontend Developer; department: Engineering; office: R
+    #2 PEOPLE-DIRECTORY  d=1.5111875534057617  Team Directory > Michael Brown name: Michael Brown; role: UX Designer; department: Design; office: Remote; ema
+    #3 PEOPLE-DIRECTORY  d=1.5981618165969849  Team Directory > Ahmed Hassan name: Ahmed Hassan; role: QA Engineer; department: Engineering; office: Remote; 
+    trace: route: aggregation on {'office': ['Remote']} -> 3 matching record(s), all of them (decided by the model)
+    trace: router: Every person whose office is Remote.
+
+### [intern] routed: Show me all remote staff
+    total 3, 61.3 ms
+    #1 PEOPLE-DIRECTORY  d=1.4124473158254416  Team Directory > Maria Garcia name: Maria Garcia; role: Frontend Developer; department: Engineering; office: R
+    #2 PEOPLE-DIRECTORY  d=1.4255177974700928  Team Directory > Michael Brown name: Michael Brown; role: UX Designer; department: Design; office: Remote; ema
+    #3 PEOPLE-DIRECTORY  d=1.4319294095039368  Team Directory > Ahmed Hassan name: Ahmed Hassan; role: QA Engineer; department: Engineering; office: Remote; 
+    trace: route: aggregation on {'office': ['Remote']} -> 3 matching record(s), all of them (decided by the model)
+    trace: router: Every person whose office is Remote.
+
+### [intern] routed: How many people are based in New York?
+    total 3, 62.0 ms
+    #1 PEOPLE-DIRECTORY  d=1.7245522737503052  Team Directory > David Kim name: David Kim; role: DevOps Engineer; department: Engineering; office: New York; 
+    #2 PEOPLE-DIRECTORY  d=1.582876205444336  Team Directory > Lisa Wang name: Lisa Wang; role: Data Scientist; department: Engineering; office: New York; e
+    #3 PEOPLE-DIRECTORY  d=1.6452220678329468  Team Directory > Rachel Adams name: Rachel Adams; role: Technical Writer; department: Engineering; office: New
+    trace: route: aggregation on {'office': ['New York']} -> 3 matching record(s), all of them (decided by the model)
+    trace: router: The question asks for every person whose office is New York.
+
+### [intern] routed: Which people in Engineering work from NYC?
+    total 3, 60.4 ms
+    #1 PEOPLE-DIRECTORY  d=1.2542982475250435  Team Directory > David Kim name: David Kim; role: DevOps Engineer; department: Engineering; office: New York; 
+    #2 PEOPLE-DIRECTORY  d=1.3533929393706599  Team Directory > Lisa Wang name: Lisa Wang; role: Data Scientist; department: Engineering; office: New York; e
+    #3 PEOPLE-DIRECTORY  d=1.4503384664755599  Team Directory > Rachel Adams name: Rachel Adams; role: Technical Writer; department: Engineering; office: New
+    trace: route: aggregation on {'department': ['Engineering'], 'office': ['New York']} -> 3 matching record(s), all of them (decided by the model)
+    trace: router: Every person in Engineering whose office is New York.
+
+### [intern] routed: Which engineers are based in NYC?
+    total 3, 68.3 ms
+    #1 PEOPLE-DIRECTORY  d=1.2180185084944517  Team Directory > David Kim name: David Kim; role: DevOps Engineer; department: Engineering; office: New York; 
+    #2 PEOPLE-DIRECTORY  d=1.34693024596364  Team Directory > Lisa Wang name: Lisa Wang; role: Data Scientist; department: Engineering; office: New York; e
+    #3 PEOPLE-DIRECTORY  d=1.4523643688072072  Team Directory > Rachel Adams name: Rachel Adams; role: Technical Writer; department: Engineering; office: New
+    trace: route: aggregation on {'department': ['Engineering'], 'office': ['New York']} -> 3 matching record(s), all of them (decided by the model)
+    trace: router: Every person in Engineering whose office is New York.
+
+### [intern] routed: Who do I talk to on the Engineering team about a deploy?
+    total 3, 722.6 ms
+    #1 ENG-ONBOARDING-GUIDE  d=0.6760505446240788  New-Hire Onboarding Guide (Engineering) > Your First Week Pair with another engineer and ship one small change
+    #2 ENG-HANDBOOK  d=0.9171781217210921  Engineering Handbook > Page 1 Acme Engineering Handbook Acme Corporation builds and operates software for its 
+    #3 ENG-RELEASE-4.2  d=1.4794891321506836  Platform release 4.2 announcement > Platform release 4.2 is now live From: releases@acme.example Date: Mon, 12
+    trace: route: pointwise (decided by the model)
+    trace: router: The question asks for a contact about a deploy, which is a specific issue, not a list of people.
+    trace: hybrid top 20 -> cross-encoder (647 ms) -> top 3
+
+### [intern] routed: Can anyone in the New York office expense a parking spot?
+    total 3, 407.6 ms
+    #1 FIN-EXP-2026  d=1.3384486436843872  Expense Policy (2026 edition) > Equipment and Home Office - Additional equipment (monitors, keyboards, ergonom
+    #2 COMPANY-FAQ  d=1.4423896074295044  Company FAQ > Can I expense my home internet bill? Acme Corp does not reimburse home internet costs directly. 
+    #3 FIN-EXP-2026  d=1.4649401903152466  Expense Policy (2026 edition) > Team Events - Team meals and events: up to $90 per person. - Offsites and team
+    trace: route: pointwise (decided by the model)
+    trace: router: This is a policy question about expense eligibility, not a list of people.
+    trace: hybrid top 20 -> cross-encoder (335 ms) -> top 3
+
+### [intern] routed: I'm locked out of my laptop. Who do I ring?
+    total 3, 1240.0 ms
+    #1 HR-REMOTE  d=1.419389826637203  Remote Work Guidelines > Security - Always use the company VPN when accessing internal systems. - Lock your sc
+    #2 COMPANY-FAQ  d=1.4065898656845093  Company FAQ > Who do I contact about IT issues? Email it-support@acmecorp.com or use the #it-help Slack channe
+    #3 IT-HELPDESK-EXPORT  d=1.2112475994601128  IT helpdesk tickets (October 2026) > IT-4107 ticket_id: IT-4107; opened: 2026-10-05; reporter: David Kim; cont
+    trace: route: pointwise (decided by the model)
+    trace: router: Wants one contact for one problem.
+    trace: hybrid top 20 -> cross-encoder (1116 ms) -> top 3
+
+### [intern] routed: Who works in London?
+    total 3, 816.7 ms
+    #1 COMPANY-FAQ  d=1.5250200927257538  Company FAQ > Can I work from another country? Remote work is allowed within the employee's country of residen
+    #2 PEOPLE-DIRECTORY  d=1.8185166120529175  Team Directory > Robert Taylor name: Robert Taylor; role: VP of Engineering; department: Engineering; office: 
+    #3 PEOPLE-DIRECTORY  d=1.524876892566681  Team Directory > Michael Brown name: Michael Brown; role: UX Designer; department: Design; office: Remote; ema
+    trace: route: pointwise (decided by the model)
+    trace: router guard: the directory has an 'office' column, but no row has the value asked for: searched instead
+    trace: router: The directory does not have an office called London, so this is an unindexed filter.
+    trace: hybrid top 20 -> cross-encoder (730 ms) -> top 3
+
+### [intern] routed: Who speaks Spanish?
+    total 3, 734.5 ms
+    #1 PEOPLE-DIRECTORY  d=1.4448538853184543  Team Directory > Maria Garcia name: Maria Garcia; role: Frontend Developer; department: Engineering; office: R
+    #2 PEOPLE-DIRECTORY  d=1.769175723195076  Team Directory > Tom Martinez name: Tom Martinez; role: Security Engineer; department: Engineering; office: Sa
+    #3 PEOPLE-DIRECTORY  d=1.8877604007720947  Team Directory > Robert Taylor name: Robert Taylor; role: VP of Engineering; department: Engineering; office: 
+    trace: route: aggregation_unindexed: the directory has no 'language' column -> searched instead, logged as a missing column (decided by the model)
+    trace: router: The directory does not store language information, so this requires unindexed aggregation.
+    trace: hybrid top 20 -> cross-encoder (658 ms) -> top 3
+
+### [intern] routed: Who in the New York office has a parking permit?
+    total 3, 443.3 ms
+    #1 PEOPLE-DIRECTORY  d=1.716804414987564  Team Directory > David Kim name: David Kim; role: DevOps Engineer; department: Engineering; office: New York; 
+    #2 PEOPLE-DIRECTORY  d=1.6877444982528687  Team Directory > Rachel Adams name: Rachel Adams; role: Technical Writer; department: Engineering; office: New
+    #3 PEOPLE-DIRECTORY  d=1.6132794618606567  Team Directory > Lisa Wang name: Lisa Wang; role: Data Scientist; department: Engineering; office: New York; e
+    trace: route: aggregation_unindexed: the directory has no 'parking permit' column -> searched instead, logged as a missing column (decided by the model)
+    trace: router: A list of people by parking permit, which the directory does not store.
+    trace: hybrid top 20 -> cross-encoder (331 ms) -> top 3
+
+### [intern] routed: Who joined the company this year?
+    total 3, 479.3 ms
+    #1 PEOPLE-DIRECTORY  d=1.3603192973232057  Team Directory > James Wilson name: James Wilson; role: Senior Backend Developer; department: Engineering; off
+    #2 PEOPLE-DIRECTORY  d=1.477014183998108  Team Directory > Robert Taylor name: Robert Taylor; role: VP of Engineering; department: Engineering; office: 
+    #3 PEOPLE-DIRECTORY  d=1.2503792196738241  Team Directory > Emily Johnson name: Emily Johnson; role: Product Manager; department: Product; office: San Fr
+    trace: route: pointwise (decided by the model)
+    trace: router: Joining date is not stored in the directory and requires policy or HR data.
+    trace: hybrid top 20 -> cross-encoder (393 ms) -> top 3
+
+### [intern] dense: How many reviewers does a change to the billing code need?
+    total 5, 64.4 ms
+    #1 ENG-CODING  d=0.9110704660415649  Coding Standards > Code Review Process - Every change must be submitted as a pull request with at least one re
+    #2 FIN-EXP-2026  d=1.3734917640686035  Expense Policy (2026 edition) > Software and AI Tools - Software subscriptions under $100/month can be expense
+    #3 COMPANY-FAQ  d=1.3750561475753784  Company FAQ > How do I get access to a new tool or software? Software under $75/month can be expensed directly
+    #4 HR-ONBOARDING  d=1.4292322397232056  New Employee Onboarding Checklist > Week 4: Settling In - Complete your 30-day check-in with your manager. - F
+    #5 FIN-EXP-2026  d=1.4371342658996582  Expense Policy (2026 edition) > General Rules - Submit business expenses within 45 days of the purchase date. 
+    trace: dense top 5
+
+### [intern] keyword: How many reviewers does a change to the billing code need?
+    total 5, 59.0 ms
+    #1 ENG-HANDBOOK  d=1.458749771118164  Engineering Handbook > Page 1 Acme Engineering Handbook Acme Corporation builds and operates software for its 
+    #2 ENG-CODING  d=0.9110704660415649  Coding Standards > Code Review Process - Every change must be submitted as a pull request with at least one re
+    #3 ENG-CODING  d=1.498913049697876  Coding Standards > Testing Requirements - All new features must include unit tests. - Aim for at least 80% cod
+    #4 ENG-CODING  d=1.4874088168144226  Coding Standards > Documentation - All public APIs must have docstrings. - Architecture decisions must be reco
+    #5 COMPANY-FAQ  d=1.599548578262329  Company FAQ > What is the dress code? Acme Corp has a casual dress code for regular work days. Business casual
+    trace: keyword (full-text) top 5
+
+### [intern] hybrid: How many reviewers does a change to the billing code need?
+    total 5, 75.7 ms
+    #1 ENG-CODING  d=0.9110704660415649  Coding Standards > Code Review Process - Every change must be submitted as a pull request with at least one re
+    #2 ENG-HANDBOOK  d=1.458749771118164  Engineering Handbook > Page 1 Acme Engineering Handbook Acme Corporation builds and operates software for its 
+    #3 FIN-EXP-2026  d=1.3734917640686035  Expense Policy (2026 edition) > Software and AI Tools - Software subscriptions under $100/month can be expense
+    #4 ENG-CODING  d=1.4874088168144226  Coding Standards > Documentation - All public APIs must have docstrings. - Architecture decisions must be reco
+    #5 ENG-CODING  d=1.498913049697876  Coding Standards > Testing Requirements - All new features must include unit tests. - Aim for at least 80% cod
+    trace: dense top 20 + keyword top 20 -> RRF -> top 5
+
+### [intern] keyword: What do I need to do in my first week?
+    total 5, 72.5 ms
+    #1 HR-ONBOARDING  d=1.3014346361160278  New Employee Onboarding Checklist > Week 3: First Contributions - Attend the weekly engineering standup (Tuesd
+    #2 ENG-ONBOARDING-GUIDE  d=1.5034211280000873  New-Hire Onboarding Guide (Engineering) > Your First Week Pair with another engineer and ship one small change
+    #3 HR-LEAVE  d=1.8963153958320618  Leave Policy > Parental Leave Primary caregivers receive 16 weeks of paid parental leave. Secondary caregivers
+    #4 HR-REMOTE  d=1.7557125091552734  Remote Work Guidelines > Eligibility - All engineering roles are eligible for fully remote or hybrid work. - N
+    #5 ENG-ONBOARDING-GUIDE  d=1.5164770185947418  New-Hire Onboarding Guide (Engineering) > Day One You will meet your onboarding buddy, who answers questions f
+    trace: keyword (full-text) top 5
+
+### [intern] dense: How many days of unused vacation can I carry over now?
+    total 3, 80.8 ms
+    #1 COMPANY-FAQ  d=0.46901798248291016  Company FAQ > What happens if I don't use all my vacation days? Up to 5 days of unused annual leave can be car
+    #2 HR-LEAVE  d=0.8063755871765486  Leave Policy > Annual Leave All full-time employees receive 20 days of paid annual leave per calendar year. Un
+    #3 HR-LEAVE  d=1.010623812675476  Leave Policy > Sick Leave Employees get 10 days of paid sick leave per year. A medical certificate is required
+    trace: dense top 3
+
+### [intern] hybrid: What is the salary range for a senior developer?
+    total 3, 73.1 ms
+    #1 ENG-STACK  d=1.6791864931583405  Technology Stack > Development Tools - **Version Control**: GitHub (github.com/acmecorp) - **Package Managemen
+    #2 HR-ONBOARDING  d=1.6863423585891724  New Employee Onboarding Checklist > Week 2: Systems and Tools - Get access to GitHub by requesting it through 
+    #3 ENG-CODING  d=1.5926163792610168  Coding Standards > Testing Requirements - All new features must include unit tests. - Aim for at least 80% cod
+    trace: dense top 20 + keyword top 20 -> RRF -> top 3
+
+### [hr-partner] dense: How many weeks of parental leave will primary caregivers get in 2027?
+    total 3, 62.2 ms
+    #1 HR-LEAVE  d=0.5020151138305664  Leave Policy > Parental Leave Primary caregivers receive 16 weeks of paid parental leave. Secondary caregivers
+    #2 HR-LEAVE  d=1.0788852297927503  Leave Policy > Annual Leave All full-time employees receive 20 days of paid annual leave per calendar year. Un
+    #3 COMPANY-FAQ  d=1.1648130416870117  Company FAQ > What happens if I don't use all my vacation days? Up to 5 days of unused annual leave can be car
+    trace: dense top 3
+
+================================================================
+The answers: POST /query (the Ask tab), same questions, same strategies and top_k, as the row's person, 16 Nov.
+gpt-4.1-mini, not cached: a rerun can word them differently.
+
+### [intern] dense top 3: Who works remotely?
+    confidence medium, sources ['HR-REMOTE', 'COMPANY-FAQ', 'HR-REMOTE']
+    According to the Remote Work Guidelines (v1, effective 2025-06-01), all engineering roles are eligible for fully remote or hybrid work. However, new employees must work on-site for their first 2 weeks for onboarding. Remote work arrangements must be documented and approved by the employee's manager.
+
+### [intern] routed top 3: Who works remotely?
+    confidence low, sources ['PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY']
+    Maria Garcia (Frontend Developer), Michael Brown (UX Designer), and Ahmed Hassan (QA Engineer) all work remotely. This information is from the Team Directory v1, effective 2026-09-01.
+
+### [intern] routed top 3: How many people are based in New York?
+    confidence low, sources ['PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY']
+    There are three people based in New York: David Kim, Lisa Wang, and Rachel Adams. This information is from the Team Directory v1, effective 2026-09-01.
+
+### [intern] routed top 3: I'm locked out of my laptop. Who do I ring?
+    confidence medium, sources ['HR-REMOTE', 'COMPANY-FAQ', 'IT-HELPDESK-EXPORT']
+    You should call the IT hotline at extension 4357 for urgent issues like account lockout. This information is from the Company FAQ (v1, effective 2025-08-01).
+
+### [intern] routed top 3: Show me all remote staff
+    confidence low, sources ['PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY']
+    The remote staff at Acme Corp are: - Maria Garcia, Frontend Developer, Engineering (maria.garcia@acmecorp.com) - Michael Brown, UX Designer, Design (michael.brown@acmecorp.com) - Ahmed Hassan, QA Engineer, Engineering (ahmed.hassan@acmecorp.com) This information is from the Team Directory v1, effective 2026-09-01.
+
+### [intern] routed top 3: Which people in Engineering work from NYC?
+    confidence medium, sources ['PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY']
+    The people in Engineering who work from the New York office are David Kim (DevOps Engineer), Lisa Wang (Data Scientist), and Rachel Adams (Technical Writer). This information is from the Team Directory v1, effective 2026-09-01.
+
+### [intern] routed top 3: Who do I talk to on the Engineering team about a deploy?
+    confidence high, sources ['ENG-ONBOARDING-GUIDE', 'ENG-HANDBOOK', 'ENG-RELEASE-4.2']
+    You should talk to the engineer who is deploying the change, as engineers deploy their own changes and watch the dashboards afterward. If there is an issue during deployment, the on-call engineer handles production incidents. This information is from the Engineering Handbook (v1, effective 2025-05-01).
+
+### [intern] routed top 3: Can anyone in the New York office expense a parking spot?
+    confidence medium, sources ['FIN-EXP-2026', 'COMPANY-FAQ', 'FIN-EXP-2026']
+    I don't have information about expensing parking spots in the provided knowledge base.
+
+### [intern] routed top 3: Which engineers are based in NYC?
+    confidence medium, sources ['PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY']
+    The engineers based in New York City are David Kim, a DevOps Engineer, and Lisa Wang, a Data Scientist. This information is from the Team Directory v1, effective 2026-09-01.
+
+### [intern] routed top 3: Who works in London?
+    confidence low, sources ['COMPANY-FAQ', 'PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY']
+    I don't have information about any employees working in the London office in the provided context.
+
+### [intern] routed top 3: Who speaks Spanish?
+    confidence low, sources ['PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY']
+    I don't have information about who speaks Spanish in the knowledge base.
+
+### [intern] routed top 3: Who in the New York office has a parking permit?
+    confidence none, sources []
+    I don't have information about that in the documents you can access. Try asking about Acme Corp policies like leave, expenses, coding standards, or remote work.
+
+### [intern] routed top 3: Who joined the company this year?
+    confidence medium, sources ['PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY', 'PEOPLE-DIRECTORY']
+    I don't have information about who joined the company this year in the provided context.
+
+### [intern] dense top 5: How many reviewers does a change to the billing code need?
+    confidence medium, sources ['ENG-CODING', 'FIN-EXP-2026', 'COMPANY-FAQ', 'HR-ONBOARDING', 'FIN-EXP-2026']
+    According to the Coding Standards (v1, effective 2025-02-01), every change must be submitted as a pull request with at least one reviewer. So, a change to the billing code requires at least one reviewer.
+
+### [intern] keyword top 5: How many reviewers does a change to the billing code need?
+    confidence medium, sources ['ENG-HANDBOOK', 'ENG-CODING', 'ENG-CODING', 'ENG-CODING', 'COMPANY-FAQ']
+    A change that touches billing code needs two reviewers before it can be merged. This is stated in the Engineering Handbook, version 1, effective 2025-05-01.
+
+### [intern] hybrid top 5: How many reviewers does a change to the billing code need?
+    confidence medium, sources ['ENG-CODING', 'ENG-HANDBOOK', 'FIN-EXP-2026', 'ENG-CODING', 'ENG-CODING']
+    A change that touches billing code needs two reviewers. This information is from the Engineering Handbook, v1, effective 2025-05-01.
+
+### [intern] keyword top 5: What do I need to do in my first week?
+    confidence medium, sources ['HR-ONBOARDING', 'ENG-ONBOARDING-GUIDE', 'HR-LEAVE', 'HR-REMOTE', 'ENG-ONBOARDING-GUIDE']
+    In your first week, you should pair with another engineer and ship one small change to production to learn the deployment process. You also need to attend the weekly team meeting and the engineering all-hands. This information comes from the "New-Hire Onboarding Guide (Engineering) | v1 | effective 2025-05-01 | section: Your First Week."
+
+### [intern] hybrid top 3: What is the salary range for a senior developer?
+    confidence low, sources ['ENG-STACK', 'HR-ONBOARDING', 'ENG-CODING']
+    I don't have information about the salary range for a senior developer in the knowledge base.
+
+### [intern] dense top 3: How many days of unused vacation can I carry over now?
+    confidence high, sources ['COMPANY-FAQ', 'HR-LEAVE', 'HR-LEAVE']
+    You can carry over up to a maximum of 10 days of unused vacation to the next year, according to the Leave Policy v2 effective 2026-11-02.
+
+### [hr-partner] dense top 3: How many weeks of parental leave will primary caregivers get in 2027?
+    confidence high, sources ['HR-LEAVE', 'HR-LEAVE', 'COMPANY-FAQ']
+    Primary caregivers will receive 16 weeks of paid parental leave in 2027, according to the Leave Policy v2 effective 2026-11-02.

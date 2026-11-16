@@ -8,7 +8,8 @@
 # decision ladder.
 #
 # Part 3 adds by_ids(), count_small() and search(level="small"): the
-# second cut of the same documents (006_small_chunks.sql).
+# second cut of the same documents (006_small_chunks.sql), and record_menu()
+# and lookup_records(): a CSV row's fields, listed with SQL (007_record_fields.sql).
 # ============================================================
 
 from app.rag.store_pg import (  # noqa: F401  (re-exported)
@@ -22,7 +23,8 @@ from app.rag.store_pg import (  # noqa: F401  (re-exported)
     drop_collection,
     index_state,
     keyword_search,
-    records,
+    lookup_records,
+    record_menu,
     search,
     update_doc_labels,
 )

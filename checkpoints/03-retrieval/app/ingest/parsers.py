@@ -35,7 +35,10 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 
-PARSER_VERSION = "1"
+# Part of every chunk's pipeline id: bump it when a parser's output changes,
+# and the next sync re-cuts every document once.
+# "2": CSV rows keep their fields (Section.fields) for the router's lookups.
+PARSER_VERSION = "2"
 
 # A PDF with fewer characters than this across all pages has no real text
 # layer: it is a scan.
@@ -46,6 +49,7 @@ MIN_PDF_TEXT_CHARS = 50
 class Section:
     heading: str
     text: str
+    fields: dict[str, str] | None = None   # a record (a CSV row): its columns, kept for lookups (Part 3)
 
 
 @dataclass
@@ -124,13 +128,17 @@ def parse_text(data: bytes) -> Parsed:
 # Purpose:
 # A row is a record (one person, one product). Keep it whole, labelled
 # with its column names, so "who is the DevOps engineer?" finds one row.
+# Part 3: keep the columns too (`fields`). The sync stores them on the
+# row's chunk, so the router can list rows with SQL instead of
+# splitting the text back apart on every question.
 def parse_csv(data: bytes) -> Parsed:
     reader = csv.DictReader(io.StringIO(data.decode("utf-8-sig", errors="replace")))
     sections = []
     for row in reader:
         values = {k.strip(): (v or "").strip() for k, v in row.items() if k}
         first = next(iter(values.values()), "row")
-        sections.append(Section(heading=first, text="; ".join(f"{k}: {v}" for k, v in values.items())))
+        sections.append(Section(heading=first, text="; ".join(f"{k}: {v}" for k, v in values.items()),
+                                fields={k.lower(): v for k, v in values.items()}))
     return Parsed(sections=sections, parser="csv")
 
 

@@ -48,6 +48,8 @@ from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
 from app.routers.chat import router as chat_router
 from app.routers.documents import router as documents_router
+from app.routers.evals import router as evals_router
+from app.routers.guardrails import router as guardrails_router
 from app.routers.query import router as query_router
 from app.routers.search import router as search_router
 from app.routers.sync import router as sync_router
@@ -75,6 +77,8 @@ app.include_router(chat_router)
 app.include_router(documents_router)
 app.include_router(sync_router)
 app.include_router(admin_router)
+app.include_router(evals_router)
+app.include_router(guardrails_router)
 app.include_router(ui_router)
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")

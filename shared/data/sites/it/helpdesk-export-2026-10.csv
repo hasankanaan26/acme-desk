@@ -1,6 +1,17 @@
-ticket_id,opened,reporter,contact,summary,resolution
-IT-4101,2026-10-02,Maria Garcia,maria.garcia.home@gmail.com,VPN disconnects every few minutes on home Wi-Fi,Switched the VPN client to the TCP profile and updated it to version 6.2. Fixed.
-IT-4107,2026-10-05,David Kim,+1 646 555 0187,Laptop battery drains in two hours,Battery replaced under warranty. Laptop swapped for a loaner for one day.
-IT-4112,2026-10-09,Priya Patel,priya.p.1990@yahoo.com,Cannot open the Finance portal after password change,Cleared the cached single sign-on token and re-enrolled multi-factor authentication.
-IT-4120,2026-10-14,Tom Baker,+44 20 7946 0958,Second monitor flickers when docked,Replaced the USB-C dock with the approved model from the IT catalogue.
-IT-4126,2026-10-20,James Wilson,(415) 555-0199,Clicked a link in a phishing email,Password reset and sessions revoked. Reported to the security team. No data accessed.
+ticket_id,opened,reporter,contact,status,summary,resolution
+IT-4101,2026-10-02,Maria Garcia,maria.garcia.home@gmail.com,resolved,VPN disconnects every few minutes on home Wi-Fi,Switched the VPN client to the TCP profile and updated it to version 6.2. Fixed.
+IT-4103,2026-10-03,Emily Johnson,emily.j.pm@outlook.com,resolved,Shared calendar does not show the product team's meetings,Re-added the shared calendar with read permission. The team's meetings show again.
+IT-4107,2026-10-05,David Kim,+1 646 555 0187,resolved,Laptop battery drains in two hours,Battery replaced under warranty. Laptop swapped for a loaner for one day.
+IT-4109,2026-10-07,Maria Garcia,maria.garcia.home@gmail.com,resolved,Webcam not detected in video calls after the OS update,Rolled back the camera driver and paused the update on that laptop until the vendor fix ships.
+IT-4112,2026-10-09,Priya Patel,priya.p.1990@yahoo.com,resolved,Cannot open the Finance portal after password change,Cleared the cached single sign-on token and re-enrolled multi-factor authentication.
+IT-4114,2026-10-12,Lisa Wang,+1 917 555 0142,disputed,Notebook server runs out of memory on large datasets,Raised the memory limit to 16 GB. The reporter says jobs still crash on datasets over 10 GB.
+IT-4116,2026-10-13,Michael Brown,m.brown.design@gmail.com,resolved,Design app license expired,Renewed the seat and re-activated it on the laptop.
+IT-4120,2026-10-14,Tom Baker,+44 20 7946 0958,resolved,Second monitor flickers when docked,Replaced the USB-C dock with the approved model from the IT catalogue.
+IT-4122,2026-10-16,Maria Garcia,+1 305 555 0163,disputed,Code editor freezes when opening the main repository,Excluded build folders from file watching. The reporter says it still freezes when switching branches.
+IT-4124,2026-10-19,Ahmed Hassan,ahmed.qa.h@outlook.com,open,Test phones cannot join the office guest network,
+IT-4126,2026-10-20,James Wilson,(415) 555-0199,resolved,Clicked a link in a phishing email,Password reset and sessions revoked. Reported to the security team. No data accessed.
+IT-4128,2026-10-22,Rachel Adams,rachel.writes@gmail.com,resolved,Cannot publish to the documentation site: permission denied,Added her to the docs-publishers group.
+IT-4131,2026-10-26,James Wilson,(415) 555-0199,disputed,Build server takes 40 minutes per build,Added two build agents. The reporter says builds still take over 30 minutes.
+IT-4133,2026-10-27,Maria Garcia,maria.garcia.home@gmail.com,open,Keys stick on the company laptop keyboard,
+IT-4135,2026-10-28,David Kim,+1 646 555 0187,open,Cannot SSH into the staging servers from home,
+IT-4137,2026-10-29,Sarah Chen,sarah.chen.sf@gmail.com,open,New starter's laptop not ready for Monday,

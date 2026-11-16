@@ -45,10 +45,10 @@ from app.config import (
 from app.ingest.register import date_int
 from app.llm import cached_call_llm
 from app.prompts.query_rewrite import HYDE_PROMPT, MULTI_QUERY_PROMPT
-from app.rag import reranker, router
+from app.rag import reranker, router, router_llm
 from app.rag.classifier import classify_question
 from app.rag.embedder import embed_text, embed_texts
-from app.rag.store import Access, by_ids, count, keyword_search, records, search
+from app.rag.store import Access, by_ids, count, keyword_search, lookup_records, record_menu, search
 
 
 # Purpose:
@@ -90,6 +90,7 @@ def retrieve(query: str, group_ids, top_k: int = 3, as_of: str | None = None,
 #   parent         dense over the small chunks -> their sections (Part 3)
 #   routed         a "who / list / how many ... in <office>" question
 #                  -> every matching directory row; else hybrid_rerank
+#                  (the shape: a model's plan checked by code, router_llm.py)
 # The last five come from the RAG weeks' checkpoint 6 (the lab). Every
 # first stage is search() or keyword_search(), so nothing a strategy
 # returns ever got past the access filter; a reranker or a rewrite only
@@ -210,17 +211,40 @@ def _multi_query(query: str, embedding: list[float], top_k: int, depth: int, acc
 
 # Routed: top k is a budget, and "who works remotely?" has as many right
 # answers as the directory has remote rows. Aggregation questions get a
-# lookup over EVERY directory row this user may read; the rest go to
-# hybrid_rerank. Someone who may not read the directory gets no rows.
+# lookup over EVERY matching record this user may read; the rest go to
+# hybrid_rerank. The menu (record sets, filter columns, values) comes from
+# chunks.fields with one SQL query; someone who may read no record set
+# gets no menu, and the question is searched without asking a model.
+# The shape comes from router_llm.plan(): a model's plan, checked by code
+# against that menu (ROUTER=rules: Wednesday's regular expressions).
 def _routed(query: str, embedding: list[float], top_k: int, depth: int, access: Access,
             steps: list[str]) -> list[dict]:
-    rows = records(embedding, "people", access) if access.doc_type in (None, "people") else []
-    shape, wanted = router.classify(query, rows) if rows else ("pointwise", {})
-    if shape == "aggregation":
-        hits = [{**c, "found_by": ["records"]} for c in router.lookup(rows, wanted)]
-        steps.append(f"route: aggregation on {wanted} -> {len(hits)} matching record(s), all of them")
+    menu = record_menu(list(router.ROUTABLE), access)
+    if access.doc_type:   # the doc-type filter (Ask's "force: <type>") narrows the menu too
+        menu = {s: m for s, m in menu.items() if m["doc_type"] == access.doc_type}
+    if not menu:
+        steps.append("route: pointwise")
+        return _rerank(query, _hybrid(query, embedding, depth, access), top_k, f"hybrid top {depth}", steps)
+
+    plan = router_llm.plan(query, menu)
+    by = f"decided by {plan.decided_by}"
+    if plan.route == router_llm.AGGREGATION:
+        hits = [{**c, "found_by": ["records"]} for c in lookup_records(embedding, plan.source, plan.filters, access)]
+        steps.append(f"route: aggregation on {plan.filters} -> {len(hits)} matching record(s), all of them ({by})")
+        steps.append(f"router lookup: {plan.source} where " +
+                     " and ".join(f"fields->>'{c}' in {v}" for c, v in sorted(plan.filters.items())))
+        steps += plan.notes + ([f"router: {plan.reasoning}"] if plan.reasoning else [])
         return hits
-    steps.append("route: pointwise")
+    if plan.route == router_llm.AGGREGATION_UNINDEXED:
+        logged = router_llm.log_miss(query, plan)
+        where = ("the directory" if plan.source == router.PEOPLE else plan.source) if plan.source else None
+        gap = (f"{where} has no {plan.missing_column!r} column" if where
+               else f"no record set holds {plan.missing_column!r}")
+        steps.append(f"route: aggregation_unindexed: {gap} "
+                     f"-> searched instead{', logged as a missing column' if logged else ''} ({by})")
+    else:
+        steps.append(f"route: pointwise ({by})")
+    steps += plan.notes + ([f"router: {plan.reasoning}"] if plan.reasoning else [])
     return _rerank(query, _hybrid(query, embedding, depth, access), top_k, f"hybrid top {depth}", steps)
 
 

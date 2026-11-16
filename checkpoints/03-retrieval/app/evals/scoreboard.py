@@ -11,6 +11,18 @@
 #            A chunk MEETS a need when it comes from that document and
 #            holds every one of those words (case, spaces and
 #            punctuation ignored).
+#
+# The two numbers to start with (RAGAS's names, computed from the
+# hand-written needs, so no LLM judge):
+#   context recall     the share of the question's needs that the top 5
+#                      meets. 1.0 = everything the answer needs arrived.
+#   context precision  were the useful chunks at the TOP? A chunk is
+#                      useful when it meets a need. RAGAS's formula: the
+#                      mean of precision@i over the ranks i that hold a
+#                      useful chunk. Useful at 1 = 1.0; first useful at
+#                      2 = 0.5; none = 0.
+#
+# The finer ones, for when those two aren't enough:
 #   ready@n  the position at which the results so far meet EVERY
 #            need of the question (a two-document question has two).
 #
@@ -85,6 +97,7 @@ def score(question: dict, chunks: list[dict], k: int = 5) -> dict:
     if not needs:
         best = min((c["distance"] for c in chunks), default=None)
         return {"answerable": False, "ready": None, "hit@1": None, "hit@5": None, "rr": None, "doc@5": None,
+                "recall": None, "precision": None, "useful": None,
                 "calm": best is None or best > CONFIDENCE_HIGH_THRESHOLD, "best_distance": best, "docs": docs}
     ranks = []
     for need in needs:
@@ -92,9 +105,21 @@ def score(question: dict, chunks: list[dict], k: int = 5) -> dict:
         ranks.append(rank)
     ready = max(ranks) if all(ranks) else None
     found_docs = all(any(d in docs for d in need_docs(n)) for n in needs)
+    useful = [any(meets(c, n) for n in needs) for c in top]
     return {"answerable": True, "ready": ready, "hit@1": ready == 1, "hit@5": ready is not None,
             "rr": 1 / ready if ready else 0.0, "doc@5": found_docs, "calm": None,
-            "best_distance": min((c["distance"] for c in chunks), default=None), "docs": docs}
+            "recall": round(sum(1 for r in ranks if r) / len(needs), 2), "precision": context_precision(useful),
+            "useful": useful, "best_distance": min((c["distance"] for c in chunks), default=None), "docs": docs}
+
+
+def context_precision(useful: list[bool]) -> float:
+    """RAGAS: the mean of precision@i over every rank i that holds a useful chunk. [F, T] -> 0.5, [T, F, T] -> 0.83."""
+    found, total = 0, 0.0
+    for i, u in enumerate(useful, start=1):
+        if u:
+            found += 1
+            total += found / i
+    return round(total / found, 2) if found else 0.0
 
 
 def _mean(values) -> float | None:
@@ -107,6 +132,8 @@ def _mean(values) -> float | None:
 def summarize(rows: list[dict]) -> dict:
     return {
         "questions": len(rows),
+        "recall": _mean(r.get("recall") for r in rows),          # .get: runs saved before these existed
+        "precision": _mean(r.get("precision") for r in rows),
         "hit@1": _mean(r["hit@1"] for r in rows),
         "hit@5": _mean(r["hit@5"] for r in rows),
         "mrr": _mean(r["rr"] for r in rows),
@@ -119,13 +146,14 @@ def summarize(rows: list[dict]) -> dict:
 
 
 # Purpose:
-# Which technique wins a scenario. Quality first (Hit@1, then MRR, or
-# calm for the unanswerable ones), then cost: fewer LLM calls, then
+# Which technique wins a scenario. Quality first: context recall (did
+# everything arrive?), then context precision (was it at the top?), or
+# calm for the unanswerable ones. Then cost: fewer LLM calls, then
 # faster. A leak disqualifies: a technique that leaks wins nothing.
 def winner(table: dict[str, dict]) -> str | None:
     def key(item):
         name, s = item
-        quality = (s["calm"] or 0, 0) if s["hit@1"] is None else (s["hit@1"] or 0, s["mrr"] or 0)
+        quality = (s["calm"] or 0, 0) if s["hit@1"] is None else (s.get("recall") or 0, s.get("precision") or 0)
         return (-quality[0], -quality[1], s["llm"] or 0, s["ms"] or 0, name)
     clean = [(n, s) for n, s in table.items() if s["leaks"] == 0]
     return min(clean, key=key)[0] if clean else None

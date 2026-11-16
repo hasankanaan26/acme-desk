@@ -5,6 +5,7 @@ scoreboard.py — every retrieval technique, the same scenario questions, one ta
     python scoreboard.py --llm                 # + hyde and multi_query (one cached LLM call per question each)
     python scoreboard.py --strategies dense,parent --details
     python scoreboard.py --scenario whole-section --details
+    python scoreboard.py --more                # also Hit@1, Hit@5, MRR, doc@5 (context recall and precision always)
     python scoreboard.py --save-baseline       # freeze today's numbers (runs/scoreboard-baseline.json)
     python scoreboard.py --against-baseline    # what moved since, question by question
 
@@ -67,7 +68,7 @@ def _cell(value, width: int, digits: int = 2) -> str:
     return f"{value:>{width}}"
 
 
-def print_scenario(scenario: str, table: dict[str, dict], n: int, fell_back: set[str]) -> str | None:
+def print_scenario(scenario: str, table: dict[str, dict], n: int, fell_back: set[str], more: bool) -> str | None:
     # A technique that fell back (no model, no reranker) is shown, starred, and can't win:
     # its numbers are another technique's.
     best = winner({name: s for name, s in table.items() if name not in fell_back})
@@ -80,12 +81,15 @@ def print_scenario(scenario: str, table: dict[str, dict], n: int, fell_back: set
             print(f"  {name:<15}{_cell(s['calm'], 7)}{_cell(s['llm'], 8, 1)}{_cell(s['ms'], 8, 0)}"
                   f"{_cell(s['leaks'], 7)}{mark}")
     else:
-        print(f"  {'technique':<15}{'Hit@1':>7}{'Hit@5':>7}{'MRR':>7}{'doc@5':>7}{'LLM/q':>8}{'ms/q':>8}{'leaks':>7}")
+        extra = f"{'Hit@1':>7}{'Hit@5':>7}{'MRR':>7}{'doc@5':>7}" if more else ""
+        print(f"  {'technique':<15}{'recall':>8}{'precision':>11}{extra}{'LLM/q':>8}{'ms/q':>8}{'leaks':>7}")
         for name, s in table.items():
             mark = "  <- winner" if name == best else ""
             name = f"{name}*" if name in fell_back else name
-            print(f"  {name:<15}{_cell(s['hit@1'], 7)}{_cell(s['hit@5'], 7)}{_cell(s['mrr'], 7)}"
-                  f"{_cell(s['doc@5'], 7)}{_cell(s['llm'], 8, 1)}{_cell(s['ms'], 8, 0)}{_cell(s['leaks'], 7)}{mark}")
+            cells = (f"{_cell(s['hit@1'], 7)}{_cell(s['hit@5'], 7)}{_cell(s['mrr'], 7)}{_cell(s['doc@5'], 7)}"
+                     if more else "")
+            print(f"  {name:<15}{_cell(s['recall'], 8)}{_cell(s['precision'], 11)}{cells}"
+                  f"{_cell(s['llm'], 8, 1)}{_cell(s['ms'], 8, 0)}{_cell(s['leaks'], 7)}{mark}")
     return best
 
 
@@ -96,11 +100,13 @@ def print_details(results: dict, questions: list[dict]) -> None:
         for name, res in results.items():
             r = next(r for r in res["rows"] if r["id"] == q["id"])
             if r["answerable"]:
-                verdict = f"ready@{r['ready']}" if r["ready"] else ("right doc, wrong piece" if r["doc@5"] else "missed")
+                found = f"recall {r['recall']:.2f} precision {r['precision']:.2f}"
+                verdict = f"{found}, " + (f"ready@{r['ready']}" if r["ready"]
+                                          else ("right doc, wrong piece" if r["doc@5"] else "missed"))
             else:
                 verdict = f"{'calm' if r['calm'] else 'SURE OF ITSELF'} (best distance {r['best_distance'] or 0:.2f})"
             flags = f"  [{', '.join(r['flags'])}]" if r["flags"] else ""
-            print(f"    {name:<14} {verdict:<24} {' '.join(d or '?' for d in r['docs'][:3])}{flags}")
+            print(f"    {name:<14} {verdict:<52} {' '.join(d or '?' for d in r['docs'][:3])}{flags}")
 
 
 def compare_baseline(results: dict) -> None:
@@ -133,6 +139,7 @@ def main() -> None:
     parser.add_argument("--llm", action="store_true", help="include hyde and multi_query")
     parser.add_argument("--scenario", choices=SCENARIOS)
     parser.add_argument("--details", action="store_true")
+    parser.add_argument("--more", action="store_true", help="also Hit@1, Hit@5, MRR and doc@5 in every table")
     parser.add_argument("--save-baseline", action="store_true")
     parser.add_argument("--against-baseline", action="store_true")
     args = parser.parse_args()
@@ -184,16 +191,19 @@ def main() -> None:
         for name in table:
             results[name].setdefault("by_scenario", {})[scenario] = table[name]
         winners[scenario] = print_scenario(scenario, table, sum(1 for q in questions if q["scenario"] == scenario),
-                                           fell_back)
+                                           fell_back, args.more)
 
-    print("\nWho wins what (quality first, then fewer LLM calls, then speed; a leak disqualifies):")
+    print("\nWho wins what (recall first, then precision, then fewer LLM calls, then speed; a leak disqualifies):")
     for scenario, best in winners.items():
         s = results[best]["by_scenario"][scenario] if best else {}
-        quality = f"calm {s['calm']:.2f}" if scenario == "unanswerable" else f"Hit@1 {s['hit@1']:.2f}  MRR {s['mrr']:.2f}"
+        quality = (f"calm {s['calm']:.2f}" if scenario == "unanswerable"
+                   else f"recall {s['recall']:.2f}  precision {s['precision']:.2f}")
         print(f"  {scenario:<15} {best or '(none)':<15} {quality}")
     answerable = {name: summarize([r for r in res["rows"] if r["answerable"]]) for name, res in results.items()}
-    print(f"\n  {'all answerable':<15}" + "".join(f"  {n} {s['hit@1']:.2f}" for n, s in answerable.items()))
-    print("  (Hit@1 over every answerable question: the number one would put on a slide, and the reason not to.)")
+    print(f"\n  {'all answerable':<15}  context recall / precision over every answerable question:")
+    for n, s in answerable.items():
+        print(f"    {n:<15} {s['recall']:.2f} / {s['precision']:.2f}")
+    print("  (The numbers one would put on a slide, and the reason not to: they hide who wins where.)")
     leaks = sum(s["leaks"] for res in results.values() for s in res["by_scenario"].values())
     print(f"\nLeaks, every technique, every question: {leaks}")
     if fell_back:

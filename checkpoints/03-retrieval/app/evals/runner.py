@@ -12,11 +12,14 @@ import time
 from dataclasses import dataclass, field
 
 from app import db
+from app.config import ROUTER
 from app.db.impersonate import Person, as_person
 from app.llm import STATS
 from app.rag.retriever import retrieve
 
-LLM_STRATEGIES = {"hyde", "multi_query"}   # one model call before every search
+# One model call before every search. `routed` too, unless ROUTER=rules
+# (its router asks the model for the question's shape).
+LLM_STRATEGIES = {"hyde", "multi_query"} | ({"routed"} if ROUTER == "llm" else set())
 
 
 @dataclass

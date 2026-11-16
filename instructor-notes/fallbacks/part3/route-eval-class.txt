@@ -1,0 +1,98 @@
+Route accuracy: 23 questions (shared\golden\golden_routes.json), 12 directory rows
+
+  id   expected                                             rules                                        model
+  R01  aggregation office=Remote                            ok                                           ok
+       Who works remotely?
+       rules: aggregation office=Remote  [-]
+         llm: aggregation office=Remote  [Every person whose office is Remote.]
+  R02  aggregation office=San Francisco                     ok                                           ok
+       Who works in the San Francisco office?
+       rules: aggregation office=San Francisco  [-]
+         llm: aggregation office=San Francisco  [Every person whose office is San Francisco.]
+  R03  aggregation office=New York                          ok                                           ok
+       How many people are based in New York?
+       rules: aggregation office=New York  [-]
+         llm: aggregation office=New York  [The question asks for every person whose office is New York.]
+  R04  aggregation office=New York                          WRONG: pointwise                             ok
+       Give me the people in New York
+       rules: pointwise  [-]
+         llm: aggregation office=New York  [Every person whose office is New York.]
+  R05  aggregation office=Remote                            WRONG: pointwise                             ok
+       Show me all remote staff
+       rules: pointwise  [-]
+         llm: aggregation office=Remote  [Every person whose office is Remote.]
+  R06  aggregation department=Engineering office=New York   WRONG: aggregation department=Engineering    ok
+       Which people in Engineering work from NYC?
+       rules: aggregation department=Engineering  [-]
+         llm: aggregation department=Engineering office=New York  [Every person in Engineering whose office is New York.]
+  R07  aggregation role=Product Manager                     WRONG: pointwise                             ok
+       List the product managers
+       rules: pointwise  [-]
+         llm: aggregation role=Product Manager  [Every person whose role is Product Manager.]
+  R08  aggregation role=Security Engineer                   WRONG: pointwise                             ok
+       Who are our security engineers?
+       rules: pointwise  [-]
+         llm: aggregation role=Security Engineer  [Every person whose role is Security Engineer.]
+  R09  aggregation department=Human Resources               WRONG: pointwise                             ok
+       Who is in Human Resources?
+       rules: pointwise  [-]
+         llm: aggregation department=Human Resources  [Every person in the Human Resources department.]
+  R10  aggregation department=Design                        ok                                           ok
+       List everyone in the Design department
+       rules: aggregation department=Design  [-]
+         llm: aggregation department=Design  [The question asks for every person in the Design department.]
+  R11  pointwise                                            ok                                           ok
+       I'm locked out of my laptop. Who do I ring?
+       rules: pointwise  [-]
+         llm: pointwise  [Wants one contact for one problem.]
+  R12  pointwise                                            WRONG: aggregation department=Engineering    ok
+       Who do I talk to on the Engineering team about a deploy?
+       rules: aggregation department=Engineering  [-]
+         llm: pointwise  [The question asks for a contact about a deploy, which is a specific issue, not a list of people.]
+  R13  pointwise                                            ok                                           ok
+       How many vacation days do I get?
+       rules: pointwise  [-]
+         llm: pointwise  [Vacation days are a policy detail, not a directory query.]
+  R14  pointwise                                            ok                                           ok
+       How many people did Engineering have at the end of Q3?
+       rules: pointwise  [-]
+         llm: pointwise  [Headcount at a past period comes from a finance report, not the directory.]
+  R15  pointwise                                            ok                                           ok
+       What is Maria Garcia's email?
+       rules: pointwise  [-]
+         llm: pointwise  [The question is about one named person's contact information.]
+  R16  pointwise                                            ok                                           ok
+       Who approves expense reports?
+       rules: pointwise  [-]
+         llm: pointwise  [Asking for a policy or rule about expense report approval, not a list of people.]
+  R17  pointwise                                            ok                                           ok
+       Which team owns the billing API?
+       rules: pointwise  [-]
+         llm: pointwise  [The question asks for a specific team responsible for a product area, which is a single fact.]
+  R18  pointwise                                            WRONG: aggregation office=Remote             ok
+       How many days a week do people who work remotely need to be in the office?
+       rules: aggregation office=Remote  [-]
+         llm: pointwise  [This is a policy question about remote work rules, not a request for a list of people.]
+  R19  pointwise                                            WRONG: aggregation office=New York           ok
+       Can anyone in the New York office expense a parking spot?
+       rules: aggregation office=New York  [-]
+         llm: pointwise  [This is a policy question about expense eligibility, not a list of people.]
+  R20  pointwise                                            ok                                           ok
+       What should I wear when I go and see a customer?
+       rules: pointwise  [-]
+         llm: pointwise  [The question asks for a guideline or policy about customer visits, which is a rule or how-to.]
+  R21  unindexed                                            WRONG: pointwise                             ok
+       Who speaks Spanish?
+       rules: pointwise  [-]
+         llm: unindexed (language)  [The directory does not store language information, so this requires unindexed aggregation.]
+  R22  unindexed                                            WRONG: pointwise                             WRONG: pointwise
+       Who joined the company this year?
+       rules: pointwise  [-]
+         llm: pointwise  [Joining date is not stored in the directory and requires policy or HR data.]
+  R23  unindexed                                            WRONG: aggregation office=New York           ok
+       Who in the New York office has a parking permit?
+       rules: aggregation office=New York  [-]
+         llm: unindexed (parking permit)  [A list of people by parking permit, which the directory does not store.]
+
+  rules: 11/23 right  (5 a list sent to search, 4 turned into a directory list, 2 unindexed and pointwise mixed up, 1 a list with the wrong filters)
+  model: 22/23 right  (1 unindexed and pointwise mixed up)
